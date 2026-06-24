@@ -47,15 +47,29 @@ If the structure differs, inspect key names only — never print elements.
 - Group rows by `fav_id` and local day; expect 96 rows/day on the 15-min grid (derive the actual cadence from `ts` deltas if different). Flag short days and exclude partial days from averages.
 - ON/OFF convention: value set `{0,1}` → 1=ON; `{1,2}` → 2=ON; anything else → treat max as ON and note the values seen.
 - Per equipment: weekday avg daily run-h (Σ ÷ 5, zero-run days included), weekend avg (Σ ÷ 2), avg start / stop over days the unit ran (stop = end of last ON interval), OOH = ON time outside working hours (all weekend ON time is OOH when weekends are unoccupied).
-- Write a per-day CSV (`name,date,run_h,first_on,last_off,ooh_h`) to disk for reuse, then render the visual from it.
+- **Typical-ON envelope (`segs`).** Over the weekday days in the window, mark each 15-min slot ON per the ON/OFF rule above; a slot is *typical-ON* if it was ON on a majority (≥ 50%) of those weekday days. `segs` is the list of contiguous typical-ON slot runs as `[start_min, end_min]`, minutes from local midnight within `[0,1440]`. This — not a naive average start→stop — is what the bar draws, and it is the one field the renderer needs that the per-day CSV cannot reconstruct (correct for across-midnight, 24/7, and cycling units).
+- The script writes **two artifacts** to disk: the per-day CSV (`name,date,run_h,first_on,last_off,ooh_h`) for reuse, and a **render-aggregate JSON** matching the schema in the appendix (per-equipment stats plus the `segs` envelope). The bundled renderer consumes the aggregate JSON, not the CSV.
 
-**The visual** — what it must communicate; styling otherwise at your discretion:
+**The visual.** Default renderer is `scripts/render_runhours.py`: the script emits the render-aggregate JSON, then call `python3 scripts/render_runhours.py <agg.json> <out.svg>`, then `show_widget` once. Don't re-invent the chart each run.
 
-- Rows = equipment, grouped by type; X axis = 24 h.
-- Bar = average weekday start→stop; the portion outside working hours must be visually distinct from the portion inside, and the working-hours window demarcated on the chart.
-- Each row labelled with start–stop and run hours; never-ran equipment keeps its row, labelled "no runtime this week".
-- A short legend and an accessible title.
-- Generate it inside the script and pass it to `show_widget` once — never `cat`/paste it into the conversation a second time.
+*Locked encodings* — the render contract, do not deviate:
+
+- Horizontal Gantt, one row per equipment, grouped by `type` in `type_order`, with a group header per group.
+- Fixed 00:00→24:00 x-axis at the same scale on every row; hour ticks at a regular interval (default 4 h) labelled `HH:00`.
+- Behind each group's rows, a shaded band spanning `[wh_start_min, wh_end_min]`; light vertical gridlines at the tick positions.
+- For each unit that ran: every seg `[s,e]` (clamped to `[0,1440]`) split at `wh_start_min` and `wh_end_min` into up to three rounded rects — the portions before/after the band in the out-of-hours colour, the portion within in the in-hours colour. A 24/7 unit (`segs [[0,1440]]`) thus renders out/in/out automatically; across-midnight and cycling units render the bands their envelope produced.
+- Right-hand per-row annotation: `{lbl} · {wd_run:g}h`, then ` OOH {wd_ooh:g}h` only if `wd_ooh ≥ 0.1`, then ` +wknd {we_run:g}h` only if `we_run ≥ 0.1`.
+- `ran=false` keeps its row, drawn as italic muted "no runtime this week" near the start of the plot (no bar).
+- Title `{site_name} - average weekday equipment run hours`; one-line subtitle giving the window and "Working hours HH:MM-HH:MM (shaded). Orange = running out of hours."
+- Three-item legend (in-hours, out-of-hours, working-hours band), placed below the last group block with a clear margin — total SVG height is computed from the content so the legend never overlaps rows.
+
+*Default style tokens* — shipped defaults; substitution allowed only if internally consistent within a single run: in-hours `#0e7490`, out-of-hours `#e08a1e`, working-hours band `#eaf0f4`, gridlines `#dfe5ea`, body `#1f2933`, muted `#8a97a3`, group header `#3b4754`; font `Inter, Segoe UI, Helvetica, Arial, sans-serif`. Layout: width 1024, left gutter 150, right column 210, top margin 96, row 21, group header 24, inter-group gap 12, bar ≈ 11, corner ≈ 2.
+
+*Free to vary*: exact hex values, font, exact row height / gutters / overall width, tick interval, and title/label wording.
+
+*Escape hatch*: the bundled renderer is the default for the standard portfolio Gantt. Single-equipment timelines, weekend-only views, and other variants may diverge from it (a hand-rolled fallback should still target the aggregate schema below, so it lands in the same family).
+
+Never `cat`/paste the SVG into the conversation; one render via `show_widget`.
 
 Close with one-line anomaly flags only (zero runtime, weekend OOH, pre-dawn starts, run-on past close, heavy cycling). No essay, no table, no workbook.
 
@@ -72,6 +86,32 @@ Close with one-line anomaly flags only (zero runtime, weekend OOH, pre-dawn star
 search_sites             (include_working_hours: true)
 execute_graphql_query    (platform.favourites — one call)
 execute_graphql_query    (platform.history bulk → disk, chunked above ~12 points)
-<script>                 (parse offloaded file(s) → stats → per-day CSV → visual)
+<script>                 (parse offloaded file(s) → stats → per-day CSV + render-aggregate JSON)
+scripts/render_runhours.py <agg.json> <out.svg>   (aggregate JSON → standalone SVG)
 show_widget              (the visual, once)
+```
+
+## Appendix — render aggregate schema
+
+The script emits one JSON object; `scripts/render_runhours.py` is its only consumer. A hand-rolled fallback (renderer missing, or a variant) should target the same shape so it stays in the family.
+
+```json
+{
+  "site_name": "str",
+  "window_label": "str",          // e.g. "16-22 Jun 2026"
+  "wh_start_min": 480,             // weekday working-hours band start, minutes from local midnight
+  "wh_end_min": 1080,              // band end
+  "type_order": ["CH", "AHU"],     // group order, top to bottom
+  "equipment": [
+    {
+      "name": "str", "type": "str",
+      "wd_run": 0.0,               // avg weekday daily run hours
+      "we_run": 0.0,               // avg weekend daily run hours
+      "wd_ooh": 0.0,               // avg weekday daily out-of-hours run hours
+      "segs": [[0, 1440]],         // typical-ON envelope, minutes from midnight, within [0,1440]
+      "lbl": "str",                // "HH:MM-HH:MM" avg weekday start-stop, or "no runtime this week"
+      "ran": true
+    }
+  ]
+}
 ```
