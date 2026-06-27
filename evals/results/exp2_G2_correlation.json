@@ -1,0 +1,16 @@
+{
+  "arm": "G2 guideline (two-signal correlation: AHU SAT vs setpoint tracking)",
+  "question": "At 99 Elizabeth St last week, how well does each AHU's supply air temp track its setpoint? Typical deviation, correlation, worst controllers.",
+  "site_resolved": "99 Elizabeth St (site_id 3)",
+  "point_selection": "Selected Un-SAT + Un-SATSP, grouped favourites by equipment.name, matched SAT<->SATSP per AHU, handled duplicate-setpoint fav. Built fav_id->(equip,role) map.",
+  "n_ahus_paired": 43,
+  "alignment_method": "CASE-pivot: CREATE VIEW paired = avg(value) FILTER(role='sat') / FILTER(role='satsp') grouped by (equip,bucket) HAVING both not null; then corr() + avg(abs(sat-sp)) grouped by equip over 28,887 paired buckets.",
+  "gridding_method": "collection_interval PT15M=900s; nearest-snap on local_ts; arg_max latest-wins.",
+  "used_duckdb": true, "wrote_parquet": true,
+  "mcp_call_count": 3, "mcp_call_count_verified": 4, "schema_discovery_calls": 0, "failed_calls": 0,
+  "pulled_history_rows_into_context": false,
+  "followed_guideline": true,
+  "deviations": "FIVE GAPS FOUND: (1) two-class correlation ~doubles row count (86 favs ~58k rows) - guideline's single-class sizing misleads; plan >=2 batches. (2) no recipe for PAIRING two classes by equipment - had to derive. (3) Step 4/5 correlate example uses two fixed fav_ids globally; per-equipment needs a fav_id->(equip,role) map + CASE-pivot. (4) pandas NOT installed in venv - used duckdb VALUES/INSERT for the map; examples must not assume pandas. (5) constant setpoint -> stddev 0 -> corr() returns NULL/nan; report MAE separately + flag undefined corr.",
+  "gave_up": false,
+  "wall_notes": "Very efficient (4 calls). Step 5 two-signal SQL worked once adapted to a map-relation + CASE-pivot. Real signal: report BOTH corr and MAE - MAE alone misses sign-inverted control (fixed-setpoint AHUs show high MAE but ~0 corr). All 5 gaps folded into a new guideline 'Two-signal / correlation' section."
+}

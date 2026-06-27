@@ -1,0 +1,17 @@
+{
+  "arm": "G3 guideline (data-quality: stalled/dead point detection)",
+  "question": "At 99 Elizabeth St, which points stopped reporting or look stalled over the last week?",
+  "site_resolved": "99 Elizabeth St (site_id 3), 3574 active favourites",
+  "answer": "67 points not reporting at all, all dead the entire week (no fresh mid-week outage). Two families: ~34 VSD points on CT/tenant-CW/car-park-exhaust drives (CT-1/2-VSD, TSCWP-2-VSD, CPEF-VSD) = actionable dead-comms cluster; ~33 system-generated Estimated/Substituted meter channels (PM-AEE-E, WM-AEE-E) = benign by design. Of 146 measured temp sensors scanned, ZERO flat-lined; only 3 constant signals were setpoints holding steady (normal).",
+  "scope_strategy": "Site has 3574 favourites - full pull infeasible. (1) cheap site-wide history_available(24h) pass to isolate 67 non-reporters; (2) full history only for a ~150-point sensor subset for the flat-line variance check.",
+  "cheap_staleness_check_used": "history_available(start,end) scalar boolean, paginated, no rows; re-queried false-set over full week to split stopped-mid-week vs dead-all-week.",
+  "n_points_examined": 3574,
+  "gridding_used": false,
+  "used_duckdb": true, "wrote_parquet": true,
+  "mcp_call_count": 18, "schema_discovery_calls": 2, "failed_calls": 1,
+  "pulled_history_rows_into_context": false,
+  "followed_guideline": true,
+  "deviations": "Guideline was aggregation-only; lacked (1) scoping for whole-site DQ, (2) cheap history_available staleness probe, (3) flat-line-vs-off variance + semantic rule, (4) stopped-vs-dead triage. ALL added in new Data-quality section. NOTE: worker claimed history(latest:true) is buggy -> I VERIFIED it works (returned latest sample for a known-good fav); claim NOT propagated.",
+  "gave_up": false,
+  "wall_notes": "Strong real answer. Surfaced the single biggest cheap-win (history_available no-rows probe) and the flat!=fault semantics. The disproven latest:true claim is a reminder to verify worker bug-reports before documenting. New gotcha kept: same field can't take two arg sets in one query (Conflicting arguments)."
+}

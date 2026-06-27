@@ -1,0 +1,19 @@
+{
+  "arm": "G4 guideline (energy/demand: daily kWh + peak kW)",
+  "question": "At 99 Elizabeth St, daily electricity consumption (kWh) last week and peak electrical demand (kW) and when",
+  "site_resolved": "99 Elizabeth St (site_id 3)",
+  "answer": "Main meter PM-AEA-E (Active Energy Actual, kWh, 5-min cadence, system). Daily kWh Sat20->Fri26: 480,482,727,722,703,682,662 = ~4,457 kWh/week (weekends ~480, weekdays ~660-730). No instantaneous kW channel; peak demand derived from interval energy: max 5-min interval 10.544 kWh on Thu 25 Jun 11:10 local = ~126.5 kW (78.7 kW on a 15-min window).",
+  "meter_points_used": "PM-AEA-E fav 169651208212 unit=kWh (metadata.unit.unit), system. PM-AEF-E (Final-Substituted) empty. No building-main kW point (only sub-meter CH-Pow-Cons-kW, VSD-Pow).",
+  "cumulative_vs_instant": "Detected PER-INTERVAL (not cumulative): 825/2015 step deltas negative, non-monotonic, first==last. So daily kWh = SUM, not last-first; no reset handling needed.",
+  "consumption_method": "SUM of 5-min interval kWh per local day (zoneinfo, DST-correct). 288 intervals/day all 7 days, no gaps.",
+  "peak_demand": {"kW": 126.5, "when": "2026-06-25 11:10 Australia/Sydney", "note": "5-min window; 78.7kW @15-min"},
+  "daily_kwh_sample": [["2026-06-20",479.5],["2026-06-21",482.4],["2026-06-22",727.2],["2026-06-23",721.7],["2026-06-24",702.7],["2026-06-25",682.1],["2026-06-26",661.8]],
+  "units_handled": "Read metadata.unit.unit per point; kWh summed in-unit, kW derived rate. GOTCHA: metadata.unit is nested MetadataUnit - must subselect metadata.unit.unit or SubselectionRequired.",
+  "gridding_used": false, "used_duckdb": true, "wrote_parquet": true,
+  "mcp_call_count": 15, "schema_discovery_calls": 2, "failed_calls": 1,
+  "pulled_history_rows_into_context": false,
+  "followed_guideline": true,
+  "deviations": "Gaps fixed in new Energy/meters section + Step 2: (1) cumulative-vs-interval detection test; (2) reset/rollover; (3) peak kW from energy-only meter + state demand window; (4) metadata.unit nested subselect; (5) NEM Actual/Estimated/Substituted/Final variant pick; (6) import/export+kWh vs kVArh; (7) no energy metadata reference, discovery via name LIKE. CRITICAL: collection_interval was NULL + cadence 5-min not 15; 'assume 900s' fallback would 3x the kW -> Step 2 fallback rewritten to REQUIRE infer-from-median-delta.",
+  "gave_up": false,
+  "wall_notes": "Excellent real answer with correct meter semantics derived empirically (no rows in context). Confirmed the assume-900s fallback was an actual correctness bug for 5-min system meters."
+}
