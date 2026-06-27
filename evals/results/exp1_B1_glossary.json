@@ -1,0 +1,14 @@
+{
+  "answer": "At 99 Elizabeth St (Sydney), for the last 7 complete days (20-27 Jun 2026, Australia/Sydney), I computed run hours for the 43 central-plant assets by time-weighted integration of their on/off run-status timeseries over the 168-hour week. Continuously-running units topped the list: PAC-16 ~168.0h, kitchen exhaust KEF-16-1 ~167.9h, grease exhaust GREF-15-1 ~163.9h, tenant condenser pump TPCWP-2 ~113.0h; chillers/cooling towers ran little (winter): CH-01 ~11.8h, CHWS-Common ~16.8h, CT-1/CT-2 ~3.8h each, while CH-02, both boilers (HWB-1/HWB-3), CHWP-2, HWP-2/3 and several standby pumps/fans logged ~0h. I scoped to central plant (chillers, boilers, cooling towers, pumps, PAC units, exhaust fans) and excluded ~95 VAV terminal-unit and distributed VSD/unit-fan status channels to stay within the call/size budget.",
+  "site_resolved": "99 Elizabeth St (site_id 3)",
+  "fav_ids_found": 44,
+  "fav_id_sample": [122406568084, 122406567939, 122406568035, 122406570703, 122406630580],
+  "equipment_covered": ["PAC-16", "KEF-16-1", "GREF-15-1", "TPCWP-2", "Cold Water Pump 1", "TEF-16-1", "PAC-G-01", "PAC-G-04", "PAC-G-02", "Cold Water Pump 2", "CPEF", "HEX-2", "TPCWP-1", "PAC-G", "HWP-1", "SAF-B-1", "SAF-B-3", "TEF-15-2", "TEF-15-1", "HEX-1", "CWP-1", "CHWP-1", "CHWS-Common", "CH-01", "CH-01-HLI", "CT-1", "CT-2", "CWP-2", "HWP-2", "CHWP-2", "CH-02", "HWP-3", "HWB-3", "SAF-B-2", "SAF-G-1", "TGEF-15-1", "SEF-16-1", "HWB-1", "PAC-G-03", "Trade Waste Pump 1", "Trade Waste Pump 2", "Grease Arrestor Pump 1", "Grease Arrestor Pump 2"],
+  "mcp_call_count": 13,
+  "schema_discovery_calls": 2,
+  "failed_calls": 1,
+  "error_examples": ["SubselectionRequired: field 'unit' of type 'MetadataUnit' (favourites.metadata.unit)"],
+  "pulled_history_rows_into_context": true,
+  "gave_up": false,
+  "wall_notes": "Site resolved cleanly (score 1.0). No server-side run-hour aggregation exists; History is raw ts/data pairs, so run hours were computed by time-weighted step-and-hold integration of on/off status channels. Run-status channels discovered via favourites(metadata_name LIKE '%status%'), which overflowed to a file (~21 distinct status classes); excluded Filter/Lockout/Poll/VAV-Active/VAV-Cooling as non-run-status. Status points log ~every 15 min (~672 rows/channel/week), not pure COV. Batches of 10 channels (~290KB) exceeded the MCP token cap, but the gateway wrote the FULL payload to a tool-results file that I parsed locally with Python at zero extra MCP cost - the key to covering 44 channels in only 5 history calls. Main constraint: 138 equipment carry run-status; pulling all (~92k rows) was infeasible under the 30-call/size budget, so I covered the 43 central-plant assets (operator intent) and explicitly excluded ~95 VAV/VSD/unit-fan channels. CH-01 has two status channels (run + compressor), both ~11.8h, consistent. Total plant run-hours ~1709h."
+}

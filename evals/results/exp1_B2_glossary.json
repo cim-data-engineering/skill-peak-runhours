@@ -1,0 +1,16 @@
+{
+  "arm": "B glossary (replicate 2)",
+  "answer": "Over the last 7 complete days (20-27 Jun 2026, Australia/Sydney; 168h window), run hours from each equipment's binary run/status point. Central plant: HWP-1 53.7h (HWP-2/3 0h standby), CWP-1 23.6h / CWP-2 3.2h, CHWP-1 20.3h / CHWP-2 0h, CH-01 11.7h / CH-02 0h, CT-1 3.8h / CT-2 3.8h; both boilers 0h. AHU supply fans ~52-58h each. Standalone fans: PAC-16 and KEF-16-1 ~168h continuous, CPEF 62.5h, PAC-G 54.8h. Covers 35 major plant/air-side equipment; ~360 further status points not integrated within budget.",
+  "site_resolved": "99 Elizabeth St (site_id=3)",
+  "fav_ids_found": 35,
+  "fav_id_sample": [122406567939, 122406568035, 122406568084, 122406567943, 122406569861],
+  "equipment_covered": ["CHWP-1","CHWP-2","HWP-1","HWP-2","HWP-3","CWP-1","CWP-2","CT-1","CT-2","CH-01","CH-02","HWB-1","HWB-3","AHU-E-1","AHU-C-1","AHU-N-1","AHU-E-2","AHU-C-2","AHU-N-2","AHU-E-3","AHU-C-3","AHU-N-3","AHU-E-4","AHU-C-4","AHU-N-4","PAC-16","PAC-G","SAF-B-1","SAF-B-2","SAF-B-3","CPEF","SAF-G-1","TEF-15-1","KEF-16-1","SEF-16-1"],
+  "mcp_call_count": 11,
+  "mcp_call_count_verified": 11,
+  "schema_discovery_calls": 5,
+  "failed_calls": 1,
+  "error_examples": ["Validation failed: property 'query' is not defined in the schema (list_graphql_queries called with stray arg)"],
+  "pulled_history_rows_into_context": false,
+  "gave_up": false,
+  "wall_notes": "No server-side aggregation; run hours derived by integrating each point's binary status History. Main obstacle response size: ~672 rows/point/week, so ~10-13 fav_ids/batch exceeded the token cap and the gateway spilled to local files - turned into an advantage by computing with local Python reading the saved files (no raw rows in context). Hard limit is breadth: ~395 status points (many not run-hours signals - filter/lockout/VAV/poll). Scoped to 35 major channels and reported coverage. NB: this replicate did NOT discover the over-capture trap as cleanly as needed - still found points via metadata_name LIKE and had to judgement-exclude non-run-status classes."
+}

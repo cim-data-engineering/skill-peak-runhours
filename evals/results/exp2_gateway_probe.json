@@ -1,0 +1,20 @@
+{
+  "probe": "platform.history response-size + timeout sweep, site 3 AHU SAT fav_ids",
+  "probes": [
+    {"n_favs":1,"days":7,"kind":"inline","size_bytes":null,"approx_rows":672,"wall_s":4},
+    {"n_favs":2,"days":7,"kind":"offloaded","size_bytes":94766,"approx_rows":1344,"wall_s":9},
+    {"n_favs":3,"days":7,"kind":"offloaded","size_bytes":140745,"approx_rows":2016,"wall_s":8},
+    {"n_favs":4,"days":7,"kind":"offloaded","size_bytes":186992,"approx_rows":2688,"wall_s":8},
+    {"n_favs":6,"days":7,"kind":"offloaded","size_bytes":280973,"approx_rows":4032,"wall_s":11},
+    {"n_favs":12,"days":7,"kind":"offloaded","size_bytes":562640,"approx_rows":8064,"wall_s":13},
+    {"n_favs":25,"days":7,"kind":"offloaded","size_bytes":1165903,"approx_rows":16794,"wall_s":17},
+    {"n_favs":43,"days":7,"kind":"offloaded","size_bytes":1999691,"approx_rows":28889,"wall_s":17},
+    {"n_favs":43,"days":14,"kind":"offloaded","size_bytes":2083294,"approx_rows":30093,"wall_s":13,"note":"data stops ~today; 14d future-dated barely exceeds 7d"},
+    {"n_favs":43,"days":37,"kind":"error","size_bytes":null,"approx_rows":152000,"wall_s":25,"error":"Cloudflare 502 origin_bad_gateway, retryable, retry_after 60 (START moved to 2026-05-21 for 37 real days, est ~10MB)"}
+  ],
+  "inline_to_offload_threshold_bytes": "between ~45000 (1 fav inline) and 94766 (2 favs offloaded); ~25k-token harness/client cap, NOT the gateway",
+  "hard_failure": "Cloudflare 502 (transport, retryable) at ~10MB (43 favs x 37 real days). Largest success: 43 favs x 7 days = 1,999,691 bytes / 28,889 rows.",
+  "gateway_max_response_ceiling_bytes": "between ~2,000,000 and ~10,000,000",
+  "binding_constraint": "SIZE, not the 30s timeout - no probe neared 30s (max ~17s real); failure was a 502 at ~10MB.",
+  "verdict": "Two limits: (1) ~45-95KB inline->graceful-offload-to-file (harmless, expected). (2) ~2-10MB gateway origin ceiling -> hard 502. One history call safely covers ~25-30k rows / ~2MB (e.g. all 43 AHU points x 7 days). The skill's '~11 points x 7 days / 528KB' chunk guidance is ~2.5x too conservative. Future-dated end times don't grow payload."
+}

@@ -1,0 +1,23 @@
+{
+  "arm": "G guideline (non-run-hours: AHU SAT hourly profile)",
+  "question": "At 99 Elizabeth St, typical weekday hourly-average AHU supply air temperature, last week",
+  "answer": "Weekday SAT profile rises from ~20.6degC pre-dawn to a ~25degC late-morning peak then settles ~22-24degC through the occupied day. Representative: 05:00=20.6, 07:00=22.5, 10:00=25.3, 13:00=21.9, 18:00=23.7, 23:00=21.5 degC.",
+  "site_resolved": "99 Elizabeth St (site_id=3), Australia/Sydney",
+  "points_selected": "metadata_name LIKE '%supply air temp%'; chose metadata_code='Un-SAT' (AHU Unit Supply Air Temperature), excluding VAV-SAT, Un-SATSP (setpoint), PAC-SAT. 43 fav_ids / 43 AHUs, non-system, no -HLI/-MSV dups.",
+  "fav_ids_count": 43,
+  "gridding_method": "collection_interval='PT15M'=900s; single collector 57 confirmed via BOTH equipment.collector_id AND fav_id>>31. Nearest-snap of naive site-local ts to 900s grid, latest-wins via arg_max(data,ts), sparse.",
+  "interval_sec_used": 900,
+  "used_duckdb": true,
+  "wrote_parquet": true,
+  "parquet_path": "/tmp/ts-G/sat_history.parquet",
+  "hourly_profile_sample": [[5, 20.63], [7, 22.45], [10, 25.28], [13, 21.92], [18, 23.69], [23, 21.54]],
+  "mcp_call_count": 8,
+  "mcp_call_count_verified": 9,
+  "schema_discovery_calls": 2,
+  "failed_calls": 1,
+  "pulled_history_rows_into_context": false,
+  "followed_guideline": true,
+  "deviations": "GUIDELINE DEFECTS FOUND: (1) Step 2 implies metadata_code/metadata_name are usable to READ point class, but those are top-level filter ARGS only; to read you must subselect metadata.code/metadata.name/metadata.system. One call failed before correction. (2) The '11pts x 7d ~528KB known-good' note is byte-true but still trips the response TOKEN cap and forces offload - which is fine but the note implies it won't offload.",
+  "gave_up": false,
+  "wall_notes": "Smooth. The duckdb epoch-arithmetic gridding SQL and pyarrow parquet write worked VERBATIM (no AT TIME ZONE / pytz issue). zoneinfo local conversion correct. Completeness perfect: 860 buckets/hour = 43 AHUs x 5 weekdays x 4 quarter-hours, zero gaps. Ran fetch+grid as one local code step (no sub-agent spawn) per orchestrator note; raw rows never entered context (handled offload files via python/jq only)."
+}

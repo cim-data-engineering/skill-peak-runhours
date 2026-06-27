@@ -1,0 +1,20 @@
+{
+  "arm": "C skill-emulation",
+  "answer": "Over the last complete week (20-26 Jun 2026), run hours for 56 central-plant and AHU channels at 99 Elizabeth St. Most floor AHUs ran ~10-12h on weekdays, aligned with the 07:00-19:00 occupancy band; lead chiller CH-01 and primary pumps cycled on demand, while standby chiller CH-02, both boilers, and standby pumps showed no runtime. Anomaly: floors 7-8 AHUs ran 6-10h on the unoccupied weekend; AHU-*-12 idle all week. Gantt SVG rendered to disk.",
+  "site_resolved": "99 Elizabeth St (site_id=3)",
+  "fav_ids_found": 56,
+  "fav_id_sample": [122406567939, 122406567943, 122406568084, 122406568017, 122406571385],
+  "equipment_covered": ["CH-01","CH-02","CT-1","CT-2","HWB-1","HWB-3","CHWP-1","CHWP-2","CWP-1","CWP-2","HWP-1","HWP-2","HWP-3","AHU-C-1..14","AHU-E-1..14","AHU-N-1..13","AHU-N1-14","AHU-N2-14"],
+  "fav_id_selection_method": "Tier-1 status metadata_ids from references/ooh_status_metadata_reference.md (1_status rows) for default scope type codes CH/CT/HWB/PCHWP/CWP/SCHW/PHWP/SHW/AHU in one platform.favourites call. No fallback tiers needed. Dedupe applied: dropped CH-01-HLI as -HLI duplicate; 57 favourites -> 56. VAV/FCU excluded.",
+  "used_reference_metadata_ids": true,
+  "chart_produced": true,
+  "svg_path": "/tmp/runhours-skill-C/runhours_99elizabeth.svg",
+  "mcp_call_count": 8,
+  "mcp_call_count_verified": 8,
+  "schema_discovery_calls": 0,
+  "failed_calls": 0,
+  "error_examples": [],
+  "pulled_history_rows_into_context": true,
+  "gave_up": false,
+  "wall_notes": "Site resolved at score 1.0 with working hours (Mon-Fri 07:00-19:00, weekend disabled). One favourites call covered everything; 0 schema-discovery calls (SKILL.md gave exact queries). History 56 ch x 7d x 15-min grid; 5 chunks of 11 offloaded to disk (~480KB each), final 1-point chunk came back INLINE (672 zero-rows, harmless). TWO SKILL BUGS SURFACED: (1) the offloaded wrapper was a plain dict {results,...}, NOT the list-of-text-blocks the SKILL.md unwrap snippet assumes -- had to handle both shapes; (2) the tool-results dir is SHARED across concurrent sessions, so foreign fav_id/ts files from other arms were present -- made parse robust by filtering to own 56 fav_ids + dedup by (fav_id,ts). render_runhours.py consumed agg.json unmodified."
+}

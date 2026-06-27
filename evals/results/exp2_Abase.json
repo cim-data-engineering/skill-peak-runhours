@@ -1,0 +1,19 @@
+{
+  "arm": "A' bare baseline (non-run-hours: AHU SAT hourly profile)",
+  "question": "At 99 Elizabeth St, typical weekday hourly-average AHU supply air temperature, last week",
+  "answer": "Cool overnight ~20.6degC, morning ramp 07:00-08:00 to ~25, daytime plateau ~25.3 09:00-12:00, mid/late-afternoon ~22-24 (dip ~21.9 at 13:00), evening decline to ~21.5 by 23:00.",
+  "site_resolved": "99 Elizabeth St (site_id 3)",
+  "fav_ids_count": 43,
+  "gridded_to_cadence": true,
+  "gridding_method": "UTC->Sydney local; time_bucket 15-min per fav (floor-bucket, not nearest-snap), avg within slot. 43 favs x 5 weekdays x 4 slots = 860 slot-fav obs per hour-of-day before averaging.",
+  "interval_determined": "Empirically inferred ~15 min: a 1h single-fav slice showed 4 irregular COV-style samples (14:01:30,14:16:39,14:32:12,14:45:55); confirmed since gridding 20,635 raw rows yielded 20,635 slot-fav rows (<=1 sample/slot).",
+  "used_duckdb_or_parquet": true,
+  "hourly_profile_sample": [[5, 20.63], [8, 24.99], [10, 25.28], [13, 21.92], [17, 23.94], [23, 21.54]],
+  "mcp_call_count": 19,
+  "mcp_call_count_verified": 21,
+  "schema_discovery_calls": 5,
+  "failed_calls": 0,
+  "pulled_history_rows_into_context": false,
+  "gave_up": false,
+  "wall_notes": "Capable run: matched the guideline arm's values exactly, but at ~2x the MCP calls (21 vs 9) and more schema discovery (5 vs 2), and inferred the interval the hard way rather than reading collection_interval. GATEWAY DATUM: each ~143KB/~2060-row response exceeded the gateway TOKEN cap and auto-saved to a tool-results .txt (read via duckdb read_json_auto); 0 failed calls -> oversized = graceful offload, NOT a transport error. Used 12h windows x 2/day = 10 history calls."
+}

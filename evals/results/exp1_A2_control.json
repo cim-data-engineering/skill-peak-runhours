@@ -1,0 +1,16 @@
+{
+  "arm": "A control (replicate 2)",
+  "answer": "Run hours over 20-27 Jun 2026 (Sydney). AHU supply fans ~52-58h each; central plant: HWP-1 53.7h, CWP-1 23.6h/CWP-2 3.2h, CHWP-1 20.3h, CH-01 11.8h, CT-1/CT-2 3.8h; standby units 0h. Noted CH-01-HLI is the same chiller via HLI, don't double-count its 11.8h.",
+  "site_resolved": "99 Elizabeth St (site_id 3)",
+  "fav_ids_found": 59,
+  "fav_id_sample": [122406567943, 122406568084, 122406568045, 122406568035, 122406568017],
+  "equipment_covered": ["AHU-C-1..14","AHU-E-1..14","AHU-N-1..13","AHU-N1-14","AHU-N2-14","CH-01","CH-01-HLI","CH-02","CHWP-1","CHWP-2","CT-1","CT-2","CWP-1","CWP-2","HEX-1","HEX-2","HWP-1","HWP-2","HWP-3","TPCWP-1","TPCWP-2"],
+  "mcp_call_count": 17,
+  "mcp_call_count_verified": 17,
+  "schema_discovery_calls": 3,
+  "failed_calls": 0,
+  "error_examples": ["6 history queries returned 'result exceeds maximum allowed tokens' and were auto-saved to a file; all parsed locally so no data lost (not counted as failures)"],
+  "pulled_history_rows_into_context": true,
+  "gave_up": false,
+  "wall_notes": "Site resolved instantly. Deliberately excluded non-run 'status' points (filter status, VAV cooling-mode, lockout) which inflated a naive search to 397; the true run-status set is 59. Discovered the offload-to-file behaviour and batched 5-22 channels/call, computing run hours with local Python over the files (only 2 single-channel series landed in context during discovery). NB: recognised CH-01-HLI as a duplicate in prose but still listed it in equipment_covered (dedup defect). 0 failed calls this run -- got the schema right without the glossary."
+}
