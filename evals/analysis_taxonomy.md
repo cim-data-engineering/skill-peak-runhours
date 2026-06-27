@@ -34,8 +34,25 @@ Legend: **mechanic** = what the pipeline must do; **status** = covered / gap / t
 - **Value semantics** (ON=1 vs ON=2; °C vs °F; cumulative vs rate) must be detected, not
   assumed.
 
-## Hardening plan (remaining rounds, highest new-mechanic value first)
-- **Round 4 — energy/demand**: daily kWh + peak kW. New: cumulative-counter diff, max, units.
-- **Round 5 — delta-T / efficiency**: CHW supply−return delta-T (or chiller kW/ton). New:
-  multi-point per-bucket arithmetic, ratios, units.
-- (Optional) Round 6 — short-cycling: transition counting on gridded binary.
+## Cross-cutting additions tested in rounds 6-8
+- **Charting** (matplotlib + numpy, no scipy/pandas): histogram + hand-rolled KDE, scatter +
+  `polyfit`, derived-series line, per-entity dotplot. Now a guideline section.
+- **Robustness**: empty-window→last-available re-anchor (a site's data ended ~10 months ago);
+  sentinel/out-of-range screening before stats (4% sentinels wrecked one distribution);
+  working-hours/weekday masking.
+- **Calculated series / graceful degradation**: COP impossible (no flow point) → labelled
+  proxy; magnitude sanity-check (scaled HLI power point).
+- **Reset/relationship**: slope (`polyfit`) as headline + cycling-cloud interpretation +
+  dynamic-range caveat.
+
+## Status after rounds G–G8 + timing
+Covered: 1-7 (run-hours, profile, correlation, DQ, energy, delta-T, comfort-band/distribution).
+**Timing**: guideline did run-hours in **4 MCP calls vs the original skill's 8** (more
+call-efficient; skill's edge is baked-in reasoning + the Gantt).
+
+## Still genuinely untested (every tested pair was single-collector, 15-min)
+- **Multi-collector / mixed-cadence gridding** and **asymmetric cross-cadence pairing**
+  (1-min BACER vs 15-min) — documented in the guideline but never exercised; 99 Eliz's 5-min
+  meter collector (79) is the natural target.
+- Short-cycling (ON→OFF transition counting), FDD multi-point boolean patterns, anomaly/outlier
+  (IQR/MAD), drift/period-over-period regression.

@@ -92,5 +92,26 @@ assumed one shape and crashed (PR #1). **Ask:** one stable envelope.
   point-class catalogue (or richer `search_*`) for energy/power, incl. cumulative-vs-interval
   and import/export/Actual-vs-Substituted semantics so agents don't infer them from the data.
 
+## 6. Found in the analytics-hardening rounds (G6–G8)
+- **Data freshness isn't discoverable cheaply.** A site's history can end months before
+  "now" (100 Harris St: last record 2025-08-30) with no signal except an empty window. Agents
+  must probe `history_available`/`latest` then re-anchor. **Ask:** a `last_history_ts` (or
+  freshness) field on Site/Collector/Favourite so staleness is a lookup, not a probe.
+- **Fault sentinels aren't flagged.** Faulty sensors emit sentinels (`-40.7`, `90.7` °C) that
+  silently corrupt aggregates until the agent gates them. **Ask:** mark/null known sentinel or
+  out-of-range values (or expose the sensor-fault flag the BMS already has).
+- **HLI / scaled points read wrong-magnitude.** `CH-Pow-Cons-kW` (an `-HLI` point) read ~3×
+  below the plant's aux pumps — almost certainly partial/scaled. **Ask:** a scaling/validity
+  flag on HLI-derived points so agents can trust absolute values, not just trends.
+- **Missing instrumentation blocks whole metric classes.** No CHW volumetric-flow point exists
+  at the tested site, so true chiller COP/efficiency is uncomputable from the platform — only
+  proxies. Worth flagging to asset teams (commissioning), and a "what's measurable here"
+  capability hint would save agents the dead-end search.
+- **`metadata_name LIKE` saturates the ~300-row favourites page** with setpoints/variants and
+  silently drops points; exact `metadata_code(s)` is reliable. **Ask:** higher/explicit page
+  cap or a "match count" so truncation is visible.
+- **`platform.collectors` is useful** (collector_id, site_id, `collection_interval`) for
+  site/cadence discovery — keep it; surfacing it from `Site` (`site.collectors`) would help.
+
 ---
 *Evidence: `evals/results/exp1_*.json`, `exp2_*.json`, `exp2_gateway_probe.json`.*

@@ -68,7 +68,10 @@ selectable fields. To *filter*, pass them in `args`; to *read* the point class, 
 the nested object: `metadata.code`, `metadata.name`, `metadata.system` (NOT
 `metadata_code`/`metadata_name`). Use `metadata.system` to spot BACER virtual points (see
 the BACER caveat below). `metadata_name` filtering is case-insensitive SQL `LIKE`;
-`metadata_code` is exact.
+`metadata_code` is exact. **Prefer exact `metadata_code(s)`** for a known class — a broad
+`metadata_name LIKE '%temp%'` can saturate the ~300-row favourites page with setpoints and
+variants (and silently miss points). Flow searches in particular are dominated by VAV
+air-flow (l/s) — for plant flow go via the `CHWS-Common` equipment, not a name `LIKE`.
 
 - `collection_interval` is an ISO-8601 `Period` (e.g. `"PT15M"` = 900 s) — the real
   sample grid for that collector. Reach it via **equipment**, never device (Device is
@@ -163,7 +166,10 @@ GROUP BY fav_id, bucket;
 ```
 
 If favourites span multiple collectors with different intervals, grid per collector group
-(`collector_id = fav_id >> 31`; join the manifest's `interval_sec_by_collector`).
+(`collector_id = fav_id >> 31`; join the manifest's `interval_sec_by_collector`). To pair
+two series of different cadences (e.g. 1-min OAT vs 15-min plant), grid each to the
+**coarser** interval before joining. *(Multi-collector / mixed-cadence is documented but not
+yet exercised in testing — every tested pair was single-collector 15-min.)*
 
 ## Step 5 — Analyse + (optional) chart
 
@@ -230,6 +236,16 @@ FROM paired GROUP BY equip ORDER BY mae DESC;
 NULL/NaN — that's "undefined correlation", not zero. Report MAE for those and flag the
 correlation as undefined rather than dropping the equipment.
 
+**Reset / relationship questions** ("is X reset against Y?", "X vs OAT"): the headline is a
+**regression slope** (`numpy.polyfit(x, y, 1)` → units of y per unit of x), not just `corr`.
+Scatter x vs y with the fit line overlaid (see Charting), masked to operating periods. Read
+the cloud shape: a **tight, consistent-sign slope** = active reset; a **narrow horizontal
+cloud** = fixed setpoint; a **wide, looping, sign-unstable cloud** = the controlled side is
+*cycling* against a roughly fixed target (a common third outcome — name it, don't force
+reset-vs-flat). Caveat: you can only detect a reset if the driver has enough **dynamic range
+in the window** — a winter week with ~6 K of OAT swing can't reveal an OAT reset even if one
+exists; widen the window or pick a shoulder/summer period.
+
 ## Derived metrics (delta-T, ratios, efficiency)
 
 "Plant delta-T", "chiller kW/ton", "COP", "approach temp" — these compute a **per-bucket
@@ -249,6 +265,17 @@ as correlation, but three extra rules that decide whether the number is real:
    sets the sign — a metric that's mostly negative during operation means the operands are
    swapped. Prefer **common-header / system points** (e.g. `CHWS-Common` leaving/entering)
    over per-unit points for plant-level metrics.
+4. **Multi-operand & unit chains.** Real efficiency metrics combine >2 points with a unit
+   chain — e.g. cooling `kW_th = flow(L/s) × ΔT(K) × 4.18`, then `COP = kW_th / kW_elec`
+   (dimensionless). Carry every operand's `metadata.unit.unit` and convert explicitly; the
+   pivot below extends to N roles.
+5. **Graceful degradation when a required operand is missing.** If a measurement the metric
+   needs simply doesn't exist (e.g. **no CHW flow point** — common), you cannot compute the
+   true metric: say so, then compute and **clearly label a proxy** you can (e.g. `kW per K`
+   of ΔT, a 1/COP-style indicator), noting it's relative-only.
+6. **Magnitude sanity-check.** Confirm operands are physically plausible in absolute terms,
+   not just in sign — a chiller drawing less power than its aux pumps means a scaled/partial
+   HLI point; trust the trend, flag the absolute level.
 
 ```sql
 -- pt: fav_id -> role in {supply, return, status}
@@ -319,6 +346,42 @@ the number is meaningless:
    `ooh_*_reference`). `metadata_code` is exact-match and `metadata_type_code "PM"` may
    return nothing; discover meters via `metadata_name LIKE '%energy%'/'%power%'` or by
    pulling a known meter equipment's favourites.
+
+## Charting (histograms, density, scatter, derived series)
+
+The analysis env has **matplotlib + numpy** (no `scipy`, no `pandas`). General statistical
+charts — not just the run-hours Gantt — are expected for distribution/scatter/efficiency
+questions:
+
+- **Plot only from gridded/derived values**, never raw rows (same context-hygiene rule).
+- **Histogram**: density-normalised, sensible bin width; overlay a **hand-rolled Gaussian
+  KDE** (Silverman bandwidth in numpy — there is no `scipy.stats.gaussian_kde`); mark the
+  comfort/target band (`axvspan`) and median (`axvline`).
+- **Scatter / reset curves**: x vs y from the aligned per-bucket frame; fit with
+  `numpy.polyfit(x, y, 1)` and report slope + spread; mask to operating periods.
+- **Derived time series** (ΔT, kW/K, COP): line plot of the per-bucket metric plus a
+  distribution — the Gantt renderer does **not** fit these.
+- **Per-entity dotplot**: one mean per zone/equipment, sorted, coloured by band — for
+  "which zones run hot/cold".
+- Save PNG(s) to the scratch dir and reference the path; never paste images into context.
+  (Standard run-hours Gantt still uses `scripts/render_runhours.py`; a Vega-Lite route
+  exists in `peak-skills/trend-chart` if matplotlib is unavailable.)
+
+## Robustness — run on every analysis
+
+- **Verify the window has data; re-anchor if empty.** A site may have stopped reporting (one
+  tested site's history ends ~10 months before "today"). Before a full pull, confirm data
+  exists in the requested window (cheap `history_available`, or a `latest` ts probe); if
+  empty, fall back to the **last available complete window** and **state the actual window**
+  — never return "no data" when the site has simply moved on.
+- **Screen sentinel / out-of-range values before any stats.** Faulty sensors emit sentinels
+  (e.g. `-40.7` / `90.7` °C) or impossible values; 4% sentinel rows made one distribution's
+  stats meaningless until gated. Drop values outside a physically-plausible range for the
+  unit **before** averaging / histogramming / correlating, and report the count excluded.
+- **Working-hours / weekday masking.** Run-hours, OOH and comfort questions need the site
+  `working_hours` block: derive weekday (`isodow`) and hour-of-day from `local_ts` and mask
+  to occupied periods. "Weekday average" divides by weekdays in the window; OOH = ON/active
+  outside the band (all weekend on-time is OOH when weekends are unoccupied).
 
 ## Discipline
 
