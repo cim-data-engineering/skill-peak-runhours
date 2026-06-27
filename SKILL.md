@@ -36,11 +36,24 @@ Look up tier-1 status `metadata_id`s for the scoped type codes in `references/oo
 
 **Bulk pull.** `execute_graphql_query(platform.history, args: {fav_ids: [...], start, end, end_exclusive: true}, fields: ["fav_id","ts","data"])`. Fetch all three fields — payload size is irrelevant once offloaded, and real `ts` + `fav_id` let the script derive the grid itself (no index math, no DST bugs, no grid probe). Above ~12 points, chunk into ~10–12 points per call — the MCP gateway enforces a 30 s timeout and a max response size (11 points × 7 days ≈ 528 KB is known-good). On a transport error (5xx/timeout), halve the chunk and retry.
 
-**Response shape.** Results too large for context are stored to a file (e.g. `/mnt/user-data/tool_results/<id>.json`) with only the path returned — the raw samples never enter context. Small results come back inline; process them without echoing rows. The offloaded file is the MCP text-block wrapper, not bare results — unwrap with:
+**Response shape.** Results too large for context are stored to a file (e.g. `/mnt/user-data/tool_results/<id>.json`) with only the path returned — the raw samples never enter context. Small results come back inline; process them without echoing rows. **The offloaded payload's shape varies** — it may be the MCP text-block wrapper (`[{"text": "<json>"}]`), a bare `{"results": [...]}` dict, or a bare list — so unwrap defensively rather than assuming one shape:
 
-`rows = json.loads(json.load(open(path))[0]["text"])["results"]`
+```python
+obj = json.load(open(path))
+if isinstance(obj, list) and obj and isinstance(obj[0], dict) and "text" in obj[0]:
+    obj = json.loads(obj[0]["text"])          # text-block wrapper
+rows = obj.get("results", obj) if isinstance(obj, dict) else obj
+```
 
-If the structure differs, inspect key names only — never print elements.
+**The tool-results dir is shared across concurrent sessions**, so an offloaded file may carry rows for fav_ids that aren't yours, and one chunk's rows may be split across files. Always filter to your own fav_id set and de-dup before computing — never trust filenames to map to your chunks:
+
+```python
+want = set(fav_ids)
+rows = [r for r in rows if r["fav_id"] in want]
+rows = list({(r["fav_id"], r["ts"]): r for r in rows}.values())   # de-dup across files
+```
+
+If the structure still differs, inspect key names only — never print elements.
 
 **One script.** Hard hygiene rule: never print raw rows or "sample" elements — one careless print puts the entire blob in context. Inspect only derived files, with `wc -l` / `head`.
 
