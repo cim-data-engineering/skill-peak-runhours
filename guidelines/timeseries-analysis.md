@@ -113,7 +113,11 @@ The sub-agent:
      `start` back to widen the window.
 2. **Unwrap defensively.** Offload-to-file is the **normal** path here — anything past
    ~1 point × 1 week (~45–95 KB) is saved to a file rather than returned inline, so expect
-   a path almost always. The offloaded payload may be a text-block wrapper
+   a path almost always. *(This persist-to-file behaviour is **client-specific**: Claude Code
+   saves it + shows a preview; Cowork drops it in `/tmp` readable only via code; some MCP
+   clients lose oversized responses entirely. Always read it with code, never inline — and on
+   a client that doesn't persist, pre-bound each call under the ~25K-token inline cap.)* The
+   offloaded payload may be a text-block wrapper
    (`[{"text":"<json>"}]`), a bare `{"results":[...]}` dict, or a bare list:
    ```python
    obj = json.load(open(path))

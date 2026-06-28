@@ -12,6 +12,15 @@ analysis: chunk fav_ids → fetch → response offloads to a file → unwrap an
 write Parquet → only then analyse in DuckDB. This is fragile (it caused the PR-1 crash bug)
 and high-variance (a capable agent does it in 8 calls; an unlucky one fails — Exp1 A1).
 
+**The graceful offload we rely on is itself client-specific — prior testing confirms data
+loss elsewhere.** `peak-mcp-eval/docs/bugs.md` (28 Apr 2026): 5 of 8 tools overflow the
+**25K-token** response cap on unbounded calls (e.g. `search_alert_tickets` ~385 KB). **Claude
+Code** persists the full response to disk + shows a 2 KB preview (graceful) — but **other MCP
+clients without persist-to-disk may silently lose the data**, and in **Cowork** the payload
+landed in `/tmp`, reachable only via a script. So the offload safety-net our guideline leans on
+is *not* a platform guarantee; it's the host harness papering over an unbounded response. The
+platform — not the client — must bound large responses.
+
 ### Strongly endorse: a dedicated history tool
 The proposed tool — **`history(fav_ids[], start, end) → writes Parquet to S3 → returns a
 link`, agent then DuckDB-queries the link** — would delete almost all of the above. The
