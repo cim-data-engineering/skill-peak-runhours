@@ -15,8 +15,9 @@ description: >
 
 Any question that needs PEAK **history** (the `platform.history` time series) for one
 or more points over a window: run hours, on/off duty cycles, averages, min/max, trends,
-two-signal correlations, out-of-hours analysis, anomaly spotting. The run-hours Gantt is
-**one specialisation** of this pipeline — see `SKILL.md`.
+two-signal correlations, out-of-hours analysis, anomaly spotting. (Run-hours — a Gantt of
+average daily start/stop against occupancy hours — is **one specialisation** of this pipeline;
+a host may wrap that specific case in its own skill, but this guidance stands alone.)
 
 ## The one rule
 
@@ -42,9 +43,12 @@ Default window depends on the question; exclude today (partial day) unless asked
 
 ## Step 2 — Select points (one favourites call, carry the grid inputs)
 
-Pick `fav_id`s for the question. For status/run-hours use the tiered `metadata_id` map in
-`references/ooh_status_metadata_reference.md`; for sensor/setpoint analysis filter by point
-class. **In the same call, also fetch the gridding inputs** so no extra round-trip:
+Pick `fav_id`s for the question. For status/run-hours, select each equipment's binary status
+point — discover it by class (filter `metadata_codes`, or `metadata_name LIKE '%status%'`,
+e.g. `Un-SAF/St`, `CH-St`), preferring a true run-status over enable-command / analog-proxy
+fallbacks; for sensor/setpoint analysis filter by point class. *(If your host ships a curated
+status-`metadata_id` reference, use it — this guidance doesn't require one.)* **In the same
+call, also fetch the gridding inputs** so no extra round-trip:
 
 ```
 execute_graphql_query(platform.favourites,
@@ -177,8 +181,7 @@ yet exercised in testing — every tested pair was single-collector 15-min.)*
 
 ## Step 5 — Analyse + (optional) chart
 
-Aggregate the `gridded` view to answer the question — examples
-(see `peak-skills/skills/trend-analyzer/SKILL.md` for more):
+Aggregate the `gridded` view to answer the question — examples:
 
 ```sql
 -- hourly averages over a week
@@ -196,8 +199,8 @@ SELECT time_bucket(INTERVAL '1 hour', bucket) h,
 FROM gridded GROUP BY 1 ORDER BY 1;
 ```
 
-Write derived results to a small CSV/JSON; chart from that if a visual is wanted (for the
-run-hours Gantt, hand the render-aggregate JSON to `scripts/render_runhours.py`).
+Write derived results to a small CSV/JSON; chart from that if a visual is wanted (see
+**Charting** below).
 
 > **Runtime / engine.** This guideline uses `duckdb` + `pyarrow`. On **local-VM clients
 > (Claude Code, Cowork)** they may not be preinstalled — install first
@@ -368,12 +371,12 @@ questions:
 - **Scatter / reset curves**: x vs y from the aligned per-bucket frame; fit with
   `numpy.polyfit(x, y, 1)` and report slope + spread; mask to operating periods.
 - **Derived time series** (ΔT, kW/K, COP): line plot of the per-bucket metric plus a
-  distribution — the Gantt renderer does **not** fit these.
+  distribution — a Gantt-style runner-bar chart does **not** fit these.
 - **Per-entity dotplot**: one mean per zone/equipment, sorted, coloured by band — for
   "which zones run hot/cold".
 - Save PNG(s) to the scratch dir and reference the path; never paste images into context.
-  (Standard run-hours Gantt still uses `scripts/render_runhours.py`; a Vega-Lite route
-  exists in `peak-skills/trend-chart` if matplotlib is unavailable.)
+  *(For a run-hours Gantt specifically, a host skill may ship a bespoke renderer; absent one,
+  render it here with matplotlib like any other chart.)*
 
 ## Robustness — run on every analysis
 
