@@ -28,6 +28,17 @@ Letting the agent attach read-only to the history store and write SQL directly w
   client-side over raw rows. Pushing `time_bucket`/`avg`/`corr` to the engine is a step
   change in both speed and context cost.
 
+### Why this can't be solved client-side (portability argument)
+Our guideline keeps raw history out of context by **delegating the fetch to a sub-agent** that
+returns only a manifest. That is a **Claude Code** construct. In an **inline skill runtime**
+(claude.ai, cowork) there is no sub-agent — fetch + parse happen in the single conversation
+context, so the client **cannot** isolate the data volume itself. Offload-to-file helps (you
+get a path, not rows) but still relies on disciplined code-execution and breaks the moment a
+chunk returns inline. **So data-volume isolation must be owned by the platform** — the history
+tool (fav_ids + range → S3/parquet link → DuckDB query) is the *only* approach that works
+identically across single-agent and multi-agent clients. This is the strongest portability
+argument for shipping it.
+
 ### Requests for whichever tool ships
 1. **Return the grid inputs with the data**: `collector_id` + `collection_interval` per
    fav_id (or offer a pre-gridded mode), so the agent needn't a second query. (Note:
