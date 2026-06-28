@@ -30,14 +30,36 @@ Letting the agent attach read-only to the history store and write SQL directly w
 
 ### Why this can't be solved client-side (portability argument)
 Our guideline keeps raw history out of context by **delegating the fetch to a sub-agent** that
-returns only a manifest. That is a **Claude Code** construct. In an **inline skill runtime**
-(claude.ai, cowork) there is no sub-agent — fetch + parse happen in the single conversation
-context, so the client **cannot** isolate the data volume itself. Offload-to-file helps (you
-get a path, not rows) but still relies on disciplined code-execution and breaks the moment a
-chunk returns inline. **So data-volume isolation must be owned by the platform** — the history
-tool (fav_ids + range → S3/parquet link → DuckDB query) is the *only* approach that works
-identically across single-agent and multi-agent clients. This is the strongest portability
-argument for shipping it.
+returns only a manifest — a **Claude Code** orchestration construct. You **can't assume it
+exists** across MCP clients: claude.ai chat runs the work inline in one context (no sub-agent);
+cowork's status is unconfirmed (it may be Claude-Code-based and keep sub-agents, or have them
+disabled — being verified). Where there is no sub-agent, the client **cannot** isolate data
+volume itself; offload-to-file helps (you get a path, not rows) but relies on disciplined
+code-execution and breaks the moment a chunk returns inline. **So data-volume isolation
+shouldn't depend on a client-specific feature — own it on the platform.** Server-side
+aggregation (next subsection) works identically whether or not the client has sub-agents.
+
+### Runtime reality reshapes the tool design (verified against Anthropic docs)
+The execution environment external clients use is **constrained in ways that rule out the
+obvious "S3 link + client DuckDB" design**:
+- claude.ai / API **code-execution sandbox** preinstalls pandas, numpy, scipy, **pyarrow,
+  matplotlib, sqlite** — but **not DuckDB**, and there is **no dependency-manifest field** in
+  the Agent Skill format to add it.
+- The **API sandbox has no network** (no `pip install`, and **cannot fetch an external S3
+  URL**); claude.ai network access "varies by admin/user settings". (Claude Code runs locally,
+  so DuckDB/uv are fine there — but that's not where external customers run.)
+
+Consequences for the tool:
+1. **Don't hand back an S3 link the sandbox can't reach.** Deliver results through the **MCP
+   tool-result channel** (the sandbox-accessible path, as offload already does), not an
+   external URL the no-network sandbox can't GET.
+2. **Don't assume the client can run DuckDB.** If the client must query the data, it'll be with
+   **pandas / sqlite / pyarrow** (preinstalled), not DuckDB.
+3. **Therefore prefer server-side aggregation.** Do the gridding/resample/aggregate on *your*
+   side (DuckDB/quack on the server) and return **compact results** (or a small pre-gridded
+   Parquet via the result channel). This is the only design that is simultaneously
+   network-safe, dependency-free on the client, and context-cheap — and it works identically
+   in claude.ai, cowork, and Claude Code.
 
 ### Requests for whichever tool ships
 1. **Return the grid inputs with the data**: `collector_id` + `collection_interval` per
