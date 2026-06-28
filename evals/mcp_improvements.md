@@ -1,179 +1,144 @@
 # PEAK MCP improvements — for backend discussion
 
-Findings from the time-series eval (Exp1 run-hours, Exp2 timeseries guideline +
-correlation, gateway probe). Framed as a building-performance-engineer using the MCP +
-GraphQL `platform.history` for analytics. Ordered by impact.
+Findings from the time-series eval (Exp1 run-hours; Exp2 timeseries guideline + correlation,
+distributions, COP, reset; gateway probe), framed as a building-performance engineer using the
+MCP + GraphQL `platform.history` for analytics.
 
-## 1. The history-extraction tax (the big one)
+**Reconciled against `~/dev/peak-trends-mcp`** — David's POC, which already prototypes the
+server-side data path (DuckDB gridding `grid_sql.py`/`engine.py`, server charts
+`charts.py`/`chart_render.py`, and large-asset delivery with **empirical CoWork results**,
+`docs/asset-delivery.md`, 2026-06-04). So this eval mostly **independently validates that POC's
+direction from the client/agent side**; the genuinely *new* asks are in §4.
 
-**Every** time-series question spends the majority of agent effort on plumbing, not
-analysis: chunk fav_ids → fetch → response offloads to a file → unwrap an
-**inconsistently-shaped** payload → filter foreign rows out of a **shared** dir → de-dup →
-write Parquet → only then analyse in DuckDB. This is fragile (it caused the PR-1 crash bug)
-and high-variance (a capable agent does it in 8 calls; an unlucky one fails — Exp1 A1).
+## TL;DR
+1. The history-extraction tax is real and the crux is **client portability** (two runtime
+   buckets, below). `peak-trends-mcp` already prototypes the fix.
+2. **Near-term feasible paths** (postgres push-down is **not** short-term): a server-side
+   **DuckDB-over-GQL analytics tool**, and/or **Parquet delivery + client-side DuckDB**
+   (ResourceLink→S3 or EmbeddedResource). §1.
+3. **Two net-new platform asks the POC doesn't cover: data-quality flags + metadata discovery.** §4.
 
-**The graceful offload we rely on is itself client-specific — prior testing confirms data
-loss elsewhere.** `peak-mcp-eval/docs/bugs.md` (28 Apr 2026): 5 of 8 tools overflow the
-**25K-token** response cap on unbounded calls (e.g. `search_alert_tickets` ~385 KB). **Claude
-Code** persists the full response to disk + shows a 2 KB preview (graceful) — but **other MCP
-clients without persist-to-disk may silently lose the data**, and in **Cowork** the payload
-landed in `/tmp`, reachable only via a script. So the offload safety-net our guideline leans on
-is *not* a platform guarantee; it's the host harness papering over an unbounded response. The
-platform — not the client — must bound large responses.
+## 1. The history path — problem, runtimes, and the recommended near-term design
 
-### Strongly endorse: a dedicated history tool
-The proposed tool — **`history(fav_ids[], start, end) → writes Parquet to S3 → returns a
-link`, agent then DuckDB-queries the link** — would delete almost all of the above. The
-eval evidence is unambiguous: Step 3 of our guideline exists **only** to work around the
-absence of this tool. Benefits: no chunking, no offload-shape handling, no foreign-row
-filtering, no context-flood risk, deterministic cost.
+**The extraction tax.** Every time-series question today spends most agent effort on plumbing:
+chunk fav_ids → fetch → response offloads to a file → unwrap an inconsistently-shaped payload →
+filter foreign rows from a shared dir → de-dup → write Parquet → only then analyse. Fragile
+(caused the PR-1 crash) and high-variance (8 calls when lucky, outright failure when not).
 
-### Even better (the "ideal"): direct DuckDB/quack access to history
-Letting the agent attach read-only to the history store and write SQL directly would:
-- eliminate extraction entirely (no S3 round-trip for ad-hoc work);
-- **enable server-side gridding + aggregation**, which the platform currently lacks — the
-  run-hours skill notes "there is no server-side run-hours/aggregation field; history
-  returns raw ts/data only." Today every average/run-hour/correlation is computed
-  client-side over raw rows. Pushing `time_bucket`/`avg`/`corr` to the engine is a step
-  change in both speed and context cost.
+**The offload safety-net is client-specific — prior testing confirms data loss elsewhere.**
+`peak-mcp-eval/docs/bugs.md` (28 Apr 2026): 5 of 8 tools overflow the **25K-token** cap on
+unbounded calls. Claude Code persists-to-disk + 2 KB preview (graceful); **other clients may
+silently lose the data**; in CoWork the payload landed in `/tmp`, reachable only via a script.
+So the net we lean on is host-harness behaviour, not a platform guarantee.
 
-### Two runtime buckets — the design must serve both (portability argument)
-Our guideline's mechanics (sub-agent delegation + DuckDB-over-Parquet) only work in one of the
-two environments MCP clients run in:
+**Two runtime buckets — the design must serve both.**
+- **Local-VM, Claude-Code-like — Claude Code & CoWork.** Sub-agents available; shell + FS;
+  network via MCP; packages installable (**DuckDB via uv/pip — confirmed installable in CoWork
+  2026-06-28, not preinstalled**). CoWork runs Agent Skills via zip. Client-side DuckDB works here.
+- **Remote locked sandbox — Claude API code-exec & claude.ai-chat analysis tool.** Verified vs
+  Anthropic docs: **no network** (no pip, can't fetch S3), **no DuckDB / no way to add it**, **no
+  sub-agents**; pandas/numpy/scipy/**pyarrow/sqlite** preinstalled. Client-side DuckDB does **not**
+  work here.
 
-- **Local-VM, Claude-Code-like — Claude Code and Claude Cowork.** Isolated VM on the user's
-  machine: **sub-agents ARE available** (Cowork, launched Jan 2026 as "Claude Code for the rest
-  of your work", explicitly supports breaking work into subtasks and bundles "skills,
-  connectors, and sub-agents" in plugins), shell + filesystem, network via MCP connectors, and
-  packages installable (DuckDB via uv/pip). **Our guideline works here — and Cowork is the
-  likely external-client target.** *(Confirmed by direct test 2026-06-28: Cowork runs Agent
-  Skills installed via zip — the run-hours skill was built for exactly this — and although it
-  does not preinstall DuckDB, it installs cleanly. So a Cowork skill bundles its resources and
-  adds a `uv pip install duckdb pyarrow` setup step.)*
-- **Remote locked sandbox — Claude API code-execution tool and the claude.ai-chat analysis
-  tool.** Verified against Anthropic docs: **no network** (no `pip install`, **cannot fetch an
-  external S3 URL**), **no DuckDB** (and no dependency-manifest field in the Skill format to add
-  it), **no sub-agents** — but pandas/numpy/scipy/**pyarrow/matplotlib/sqlite** are preinstalled.
-  Here the work runs **inline** and must use **pandas/sqlite**; our sub-agent + DuckDB design
-  **does not work**.
+You can't tell which bucket a user is in — so the data path shouldn't *depend* on client
+DuckDB or sub-agents.
 
-So a client-side approach can be made to work for Cowork/Claude Code but **breaks in the
-locked-sandbox clients** — and you can't tell which bucket a given user is in. A platform-side,
-server-aggregated history path is the only design that is correct in *both* buckets (and it's
-more context-efficient everywhere). That's the portability case: not "no client can do it", but
-"no single client-side design covers both runtimes".
+**Recommended near-term paths (ranked; reconciled with the POC + feasibility):**
 
-Consequences for the tool:
-1. **Don't hand back an S3 link the sandbox can't reach.** Deliver results through the **MCP
-   tool-result channel** (the sandbox-accessible path, as offload already does), not an
-   external URL the no-network sandbox can't GET.
-2. **Don't assume the client can run DuckDB.** If the client must query the data, it'll be with
-   **pandas / sqlite / pyarrow** (preinstalled), not DuckDB.
-3. **Therefore prefer server-side aggregation.** Do the gridding/resample/aggregate on *your*
-   side (DuckDB/quack on the server) and return **compact results** (or a small pre-gridded
-   Parquet via the result channel). This is the only design that is simultaneously
-   network-safe, dependency-free on the client, and context-cheap — and it works identically
-   in claude.ai, cowork, and Claude Code.
+1. **History analytics tool: server-side gridding + DuckDB-over-GQL.** The POC's model — *one
+   swappable source* (`engine.py`): GQL now, postgres/analytics-DB later. The tool does the
+   gridding/resample/aggregate server-side and returns **compact results** (or a small
+   pre-gridded Parquet via the result channel). **Best target**: works in *both* runtime buckets,
+   needs no client deps or network for compute, and is context-cheap. This is the migration seam
+   — the tool surface stays put when the source later moves to postgres.
+2. **Parquet delivery + client-side DuckDB** (works in the local-VM bucket only):
+   - **`ResourceLink` → S3** (presigned / CloudFront). Best for **large** data — no bytes through
+     MCP; client fetches on demand. NB from the POC test: presigned URLs are **too long for the
+     built-in web-fetch tool** (agent fell back to `curl`); use short CloudFront URLs in prod.
+   - **`EmbeddedResource(application/vnd.apache.parquet)`** — CoWork now accepts Parquet blobs
+     (the old "not supported" limitation lifted); written host-side out-of-band, then copied
+     host→sandbox (~3 calls). Best for **small/medium**.
+   - Both then queried with local DuckDB — so **local-VM only** (CoWork/Claude Code), not the
+     locked sandbox.
+3. **Postgres push-down — LATER, not short-term feasible.** Path 1's DuckDB-over-GQL engine is
+   the seam; swap the source to postgres or an analytics DB when ready, same tool surface.
 
-### Requests for whichever tool ships
-1. **Return the grid inputs with the data**: `collector_id` + `collection_interval` per
-   fav_id (or offer a pre-gridded mode), so the agent needn't a second query. (Note:
-   `collector_id = fav_id >> 31`, and `collection_interval` is already on
-   `equipment.collector.collection_interval` — see #4.)
-2. **Optional server-side resample/aggregate** params: `bucket=15m|1h|1d`, `agg=avg|max|last`,
-   `tz=<site>` — with the proven nearest-snap + latest-wins semantics
-   (`floor((epoch+iv/2)/iv)*iv`, `arg_max(value,ts)`).
-3. **Stable Parquet schema**: `fav_id BIGINT, ts TIMESTAMP, data DOUBLE` (+ `local_ts` if tz
-   applied).
-4. **Session-isolated output** (see #3 below) and a **cursor/pagination** path instead of a
-   hard 502 (see #2).
+**Delivery mechanics — empirical (CoWork 2026-06-04, `peak-trends-mcp/docs/asset-delivery.md`):**
+- Write to the host's **Working Folder root (an MCP root)**, **not `/tmp`** — CoWork's file
+  presenter is sandboxed and can't read server temp dirs (this is the "/tmp inaccessible" issue).
+  Write to the folder *root* (CoWork's file UI only lists root-level files).
+- **Charts: deliver a file, open it by path — never inline.** Inline SVG ≈ 1 min token-stream;
+  inline PNG is broken. (The eval guideline independently lands the same rule.)
+- **Interactive MCP Apps (`ui://`) are blocked in the CoWork preview** (host advertises ui
+  support but never mounts the iframe; matches `anthropics/claude-ai-mcp#165`) → **static images
+  only** for now.
 
-## 2. Gateway response-size behaviour is undocumented + fails hard
+**Requests for whichever tool ships:**
+1. **Return the grid inputs with the data**: `collector_id` + `collection_interval` per fav_id
+   (or a pre-gridded mode). (`collector_id = fav_id >> 31`; `collection_interval` is on
+   `equipment.collector.collection_interval` — §3.)
+2. **Server-side resample/aggregate params** — `bucket`, `agg`, `tz` — with the proven
+   nearest-snap + latest-wins semantics (`floor((epoch+iv/2)/iv)*iv`, `arg_max(value,ts)`).
+   *(The POC's `grid_sql.py` already encodes this.)*
+3. **Stable Parquet schema** `fav_id BIGINT, ts TIMESTAMP, data DOUBLE` (+ `local_ts` if tz-applied).
+4. **Pagination / cursor** for the still-large case, instead of a hard 502.
 
-Measured (`exp2_gateway_probe.json`):
-- **Inline → file-offload at ~45–95 KB** (a client token cap). Graceful, but undocumented;
-  agents discover it by luck.
-- **Hard Cloudflare 502 beyond ~2 MB / ~30 k rows** (`origin_bad_gateway`, retryable). Not a
-  clean truncation or MCP error — a raw transport failure. Largest success: 43 favs × 7 days
-  = 28,889 rows / ~2 MB.
-- Binding limit is **size, not the 30 s timeout** (nothing neared 30 s).
+## 2. Current generic-MCP issues (status quo the tool replaces)
 
-**Ask:** document the real ceiling; ideally return a structured "too large, paginate with
-cursor X" instead of a 502. (The skill currently mis-states this as "528 KB / chunk above
-~12 points" — PR #2 corrects the skill side.)
+Real for the interim generic-MCP path; **most are moot once a dedicated tool owns delivery**
+(the POC writes to the Working Folder root with its own envelope):
+- **Gateway fails hard at scale** (`exp2_gateway_probe.json`): graceful file-offload at
+  ~45–95 KB, but a **Cloudflare 502 beyond ~2 MB / ~30 k rows** (retryable; not clean
+  truncation). Binding limit is **size, not the 30 s timeout**. → pagination, not 502.
+- **Shared tool-results dir leaks across sessions** (foreign fav_ids; one chunk split across
+  files). → the POC sidesteps this by writing its own file to the Working Folder root.
+- **Inconsistent offloaded-payload shape** (text-block wrapper vs bare dict vs bare list;
+  crashed PR-1). → a dedicated tool controls its own envelope.
 
-## 3. Shared tool-results directory leaks across sessions
+## 3. GQL / data-model notes (the tool consumes these; one is a platform ask)
+- `equipment.collector.collection_interval` (ISO-8601 `Period`, e.g. `PT15M`) **does** expose the
+  grid via GQL — reach it via **equipment**, not device. Surfacing it (+ `collector_id`) on
+  `Favourite` would save a hop.
+- **BACER virtual points** (`metadata.system=TRUE`) sample at a fixed **1-min** cadence regardless
+  of collector interval — the tool should flag/group them so they aren't gridded wrong.
+- **`collection_interval` is null on system/meter points** (the main energy meter at site 3 logs
+  every 5 min with a null interval; a naive 900 s default 3×'s derived demand). **Platform ask:**
+  populate it for system collectors.
+- **`metadata.unit` is a nested `MetadataUnit`** — must subselect `metadata.unit.unit`; a flat
+  alias would help.
 
-Offloaded files from concurrent sessions land in the same dir; an agent globbing for "its"
-files picks up foreign fav_ids, and one logical chunk can split across files. We work around
-it by filtering to our own fav_id set + de-dup by `(fav_id, ts)`. **Ask:** per-session
-(or per-call) isolation of offloaded results.
-
-## 4. Inconsistent offloaded-payload shape
-
-The offloaded file is sometimes the MCP text-block wrapper (`[{"text":"<json>"}]`),
-sometimes a bare `{"results":[...]}` dict, sometimes a bare list. The documented unwrap
-assumed one shape and crashed (PR #1). **Ask:** one stable envelope.
-
-## 5. Smaller GQL/MCP notes
-- `equipment.collector.collection_interval` (ISO-8601 `Period`, e.g. `PT15M`) **does** expose
-  the sample grid via GQL — good. Reach it via **equipment**, not device. Consider surfacing
-  it (and `collector_id`) directly on `Favourite` to save a hop.
-- **Args-vs-fields friction**: `metadata_code`/`metadata_name`/`metadata_ids` are filter
-  *args* but not selectable fields; reading the class needs `metadata.code/name/system`.
-  This trips every agent (cost a failed call in two eval arms). The glossary fixes it for
-  humans; embedding the rule in the tool descriptions would fix it for agents.
-- **BACER virtual points** (`metadata.system=TRUE`: Poll Status, Scan Time, Sync %, weather)
-  sample at a fixed 1-min cadence regardless of the collector interval — a flag/grouping the
-  history tool should expose so callers don't grid them wrong.
-- **`collection_interval` is null on system/meter points** (e.g. the main energy meter at
-  site 3 logs every 5 min with a null interval). Agents must then infer cadence from `ts`
-  deltas; a naive 900 s default 3×'s derived demand. **Ask:** populate `collection_interval`
-  for system collectors, or expose the true cadence on the point.
-- **`metadata.unit` is a nested `MetadataUnit`** — `metadata.unit.unit` is the string. Minor,
-  but every units-aware query must subselect it; a flat `unit` string alias would help.
-- **No metadata reference for energy/power point classes.** Status has the curated
-  `ooh_status_metadata_reference`; there is no analogue for meters (PM-AEx active/reactive,
-  CH-Pow-Cons-kW, VSD-Pow/EnCon). `metadata_code` is exact-match and `metadata_type_code
-  "PM"` returns nothing, so meter discovery is fragile (name `LIKE` probing). **Ask:** a
-  point-class catalogue (or richer `search_*`) for energy/power, incl. cumulative-vs-interval
-  and import/export/Actual-vs-Substituted semantics so agents don't infer them from the data.
-
-## 6. Two cross-cutting themes from the analytics rounds
-
-Beyond the history tool (§1), the rounds kept hitting **two** things:
+## 4. Net-new platform asks (NOT covered by the POC's data path)
 
 ### A. Known-bad data isn't quality-flagged
-- **Erroneous / outlier readings** — 13 zone sensors at 100 Harris St read `-40.7` / `90.7` °C.
-  These are *not* clean sentinels (you'd expect e.g. `9999`); they're just bad sensor data, and
-  they silently corrupted the distribution until gated.
-- **Scaled / partial points** — `CH-Pow-Cons-kW` (an `-HLI` point) read ~3× below the plant's
-  aux pumps: a commissioning/scaling error, trustworthy only as a trend, not an absolute.
-- Both are **known-bad data the platform doesn't surface**. **Ask:** quality/validity flags on
-  `Favourite` / `History` (per-point, ideally per-reading), or expose the BMS quality bit — so
-  agents *and* dashboards can trust or exclude values instead of each re-deriving "is this
-  physically plausible?".
-- *(Missing instrumentation — e.g. no CHW flow, so no true COP — is **expected** BMS reality,
-  not a platform gap; agents should degrade to a labelled proxy, which the guideline now does.
-  A flag for points that **exist but aren't commissioned** would still help.)*
+- **Erroneous / outlier readings** — 13 zone sensors at 100 Harris St read `-40.7` / `90.7` °C
+  (not clean sentinels, just bad data) and silently corrupted the distribution until gated.
+- **Scaled / partial points** — `CH-Pow-Cons-kW` (an `-HLI` point) read ~3× below the aux pumps:
+  a commissioning/scaling error, trustworthy only as a trend.
+- **Ask:** quality/validity flags on `Favourite`/`History` (per-point, ideally per-reading), or
+  expose the BMS quality bit — so agents *and* dashboards trust/exclude rather than each
+  re-deriving "is this physically plausible?".
+- *(Missing instrumentation — e.g. no CHW flow → no true COP — is expected BMS reality, not a
+  platform gap; agents degrade to a labelled proxy. A flag for exists-but-uncommissioned points
+  would still help.)*
 
 ### B. Metadata discovery is the weak link
-- There's no good way to **find the right point classes**. `metadata_name LIKE` saturates the
-  ~300-row favourites page and silently drops points; `metadata_code` is exact-match;
-  `metadata_type_code "PM"` returns nothing; and there's no keyword search over metadata /
-  metadata-types. Agents fall back to fragile `LIKE` probing or hand-curated references (the
-  status `ooh_*_reference`; nothing exists for energy/power).
-- **Ask:** dedicated **metadata** and **metadata-type search tools with keyword searchability**
-  — the same pattern as `search_sites` / `search_equipment`. This subsumes the args-vs-fields
-  friction (§5) and the "no energy/power reference" pain: with real discovery, agents stop
-  guessing codes and stop maintaining curated maps.
+- No good way to **find point classes**: `metadata_name LIKE` saturates the ~300-row favourites
+  page and silently drops points; `metadata_code` is exact-match; `metadata_type_code "PM"`
+  returns nothing; no keyword search over metadata / metadata-types. Agents fall back to fragile
+  `LIKE` probing or hand-curated maps (status `ooh_*_reference`; nothing for energy/power).
+- **Ask:** dedicated **metadata / metadata-type search tools with keyword searchability** (the
+  `search_sites` / `search_equipment` pattern). Subsumes the args-vs-fields friction
+  (`metadata_code` etc. are filter args, not selectable fields) and the missing energy/power
+  reference.
 
-### Minor, still worth noting
+### Minor
 - **Data freshness isn't a cheap lookup** — a site's history can end months before "now"
-  (100 Harris St: last record 2025-08-30) with no signal but an empty window. A `last_history_ts`
-  on Site/Collector/Favourite would make staleness a lookup, not a probe-and-re-anchor.
-- **`platform.collectors` is useful** (collector_id, site_id, `collection_interval`); surfacing
-  it from `Site` (`site.collectors`) would save a hop.
+  (100 Harris St ends 2025-08-30) with no signal but an empty window. A `last_history_ts` on
+  Site/Collector/Favourite would make staleness a lookup, not a probe-and-re-anchor.
+- **`platform.collectors`** (collector_id, site_id, `collection_interval`) is useful for
+  cadence/site discovery; surfacing it from `Site` (`site.collectors`) would save a hop.
 
 ---
-*Evidence: `evals/results/exp1_*.json`, `exp2_*.json`, `exp2_gateway_probe.json`.*
+*Evidence: `evals/results/exp1_*.json`, `exp2_*.json`, `exp2_gateway_probe.json`.
+Cross-ref: `~/dev/peak-trends-mcp` (`docs/asset-delivery.md`, `docs/charting.md`,
+`docs/postgres-pushdown.md`, `experiments/`).*
