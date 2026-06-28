@@ -11,6 +11,9 @@ Show a building operator **when equipment actually runs versus when the building
 
 Pipeline, optimised for speed and minimal context: resolve site → one favourites call → bulk history pull saved to disk → one script computes the stats and renders the visual.
 
+> This skill is the run-hours **specialisation** of the general, self-contained
+> [`guidelines/timeseries-analysis.md`](guidelines/timeseries-analysis.md) (gridding, the fetch→Parquet→DuckDB pipeline, correlation/derived-metric/data-quality/energy methods). What this skill adds on top of that guidance: the curated tier-1 status `metadata_id` reference (`references/ooh_status_metadata_reference.md`), the locked Gantt render contract, and `scripts/render_runhours.py`. For anything beyond run-hours, follow the guideline directly.
+
 ## Scope rules
 
 - Resolve exactly **one site**: `search_sites(site_name=X, include_working_hours: true)`. Top score ≥ 0.9 → take it; otherwise show the top 3 candidates and ask. Keep the returned `timezone` and per-day `working_hours`. Degenerate working hours (all `00:00`, or every day disabled) → ask the user what occupancy hours to assess against.

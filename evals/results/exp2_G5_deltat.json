@@ -1,0 +1,17 @@
+{
+  "arm": "G5 guideline (derived metric: CHW plant delta-T)",
+  "question": "At 99 Elizabeth St, CHW plant delta-T (return-supply) last week; average, distribution, healthy?",
+  "site_resolved": "99 Elizabeth St (id 3)",
+  "answer": "Plant ran CH-01 only (~11.5 chiller-h). Over chiller-ON buckets, common-header delta-T (CHWCET-CHWCLT) averaged 1.99 K (median 1.7, range -0.7..6.6), 91.3% below 4 K -> textbook LOW DELTA-T SYNDROME (unhealthy; design ~5-7 K). Without the operating filter avg collapses to ~0 K (supply=return when off) - masking is essential.",
+  "points_used": "Supply=CHWS-Common/CHWCLT (leaving) fav 122406569838 degC; Return=CHWS-Common/CHWCET (entering) fav 122406569841 degC. Common-header pair chosen over per-chiller. Discovered via metadata_name LIKE '%chilled water%temp%'.",
+  "arithmetic_method": "Grid both to 15-min; pivot max(value) FILTER(fav_id=...) per bucket; delta_t = return-supply; HAVING both present (672/672).",
+  "operating_filter": "Masked to CH-01 status (CH-St fav 122406568084 >=0.5). Corroborated by CHWP-1 (46/46 agree). CH-02/CHWP-2 constant 0 -> excluded. Raw avg -0.002K vs chiller-on 1.99K confirms mask required.",
+  "avg_delta_t": 1.99, "delta_t_unit": "K", "pct_time_below_4K": 91.3,
+  "gridding_used": true, "used_duckdb": true, "wrote_parquet": true,
+  "mcp_call_count": 4, "schema_discovery_calls": 0, "failed_calls": 0,
+  "pulled_history_rows_into_context": false,
+  "followed_guideline": true,
+  "deviations": "Guideline had correlation but not derived metrics. Gaps fixed in new Derived-metrics section: (1) per-bucket arithmetic (subtract/ratio) sibling to corr pivot; (2) derived units (degC-degC=K, kWh/h=kW, kW/kW=dimensionless) + shared-operand check; (3) OPERATING-STATE MASKING as first-class step (the crux); (4) sign/orientation sanity-check; (5) prefer common-header/system points; (6) keep buckets where both present.",
+  "gave_up": false,
+  "wall_notes": "Very efficient (4 calls), high-value real finding. Operating filter was decisive (-0.002K -> 1.99K). Temp points not in status reference -> discovered via name LIKE (notes derived-metric questions need sensor discovery, not the status map). Sub-agent fetching has no semantic context (misjudged temp as voltage) - harmless since orchestrator knew the unit."
+}

@@ -1,0 +1,18 @@
+{
+  "arm": "G8 guideline (reset-strategy scatter: CHW supply vs OAT)",
+  "question": "At 99 Elizabeth St, is CHW supply temp reset against OAT? scatter + slope, last week",
+  "site_resolved": "99 Elizabeth St (id 3)",
+  "answer": "No OAT-based reset. 672 paired 15-min buckets: all-bucket slope -0.30 K/K (r=-0.16); running subset (chw<=12C, ~31%) flips to +0.29 K/K (r=+0.19) - sign reversal rules out deliberate reset. Not a clean flat setpoint either: CHW supply spans 7.6-16.5C (median 13.2) over a narrow OAT range 14.1-20.3C. Signature is a chiller CYCLING against a roughly fixed leaving-water target (down to ~8-10C running, drifts to ~14-16C idle).",
+  "points_used": "OAT: Un-OAT fav 122406569592 (AHU-Common), degC, PT15M, system=FALSE (NOT a 1-min weather point; no site weather/ambient virtual point exists). CHW supply: CHWCLT fav 122406569838 (CHWS-Common), degC, PT15M.",
+  "cross_cadence_handling": "Anticipated 1-min OAT vs 15-min plant, but both turned out 15-min on the SAME collector 57 -> no cross-cadence alignment needed; 672/672 complete paired buckets. Cross-cadence mechanic NOT exercised.",
+  "scatter_fit": {"slope": -0.295, "intercept": 18.31, "r_all": -0.16, "slope_running": 0.294, "r_running": 0.19, "note": "sign flips between subsets = no consistent relationship; ~9C vertical spread at any OAT"},
+  "verdict": "weak/none (plant cycling, not reset)",
+  "charts_written": ["/tmp/ts-G8/chw_vs_oat_scatter.png"],
+  "gridding_used": true, "used_duckdb": true, "wrote_parquet": true,
+  "mcp_call_count": 5, "schema_discovery_calls": 0, "failed_calls": 0,
+  "pulled_history_rows_into_context": false,
+  "followed_guideline": true,
+  "deviations": "Gaps fixed: (1) reset = regression SLOPE (numpy.polyfit) as headline, not just corr/MAE; (2) scatter+fit chart recipe (now in Charting); (3) interpretive rubric active-reset vs flat-setpoint vs CYCLING-cloud (the third outcome, previously no vocabulary); (4) dynamic-range caveat (winter's ~6K OAT swing can't reveal a reset); (5) asymmetric cross-cadence resample (grid to coarser before joining) - documented but still untested.",
+  "gave_up": false,
+  "wall_notes": "5 calls, single 94KB offload. Interpretive crux: answer was a THIRD outcome (cycling) the question didn't frame. Honest methodological flag: a winter week is a poor window to detect an OAT reset. Cross-cadence + multi-collector remain documented-but-untested across all rounds."
+}

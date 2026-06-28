@@ -1,0 +1,20 @@
+{
+  "arm": "G6 guideline (distribution + charting, other site)",
+  "question": "At 100 Harris Street, distribution (histogram+density) of zone temps last week; % outside 21-24; hot/cold zones",
+  "site_resolved": "100 Harris Street, Pyrmont NSW (site_id 186), Australia/Sydney",
+  "answer": "Window fell back to 23-29 Aug 2025 (site zone-temp history STOPS 2025-08-30, ~10 months before 'today'; anchored to last 7 complete days with data). Zone temps ~normal, mean 21.4degC, median 21.7, SD 1.5 (P5-P95 18.5-23.5). 35.8% outside 21-24, almost all COLD (34.5% <21, only 1.3% >24). 110/316 healthy zones avg <21. Level-3 cold cluster (FCU_L3_46 16.2, L3_45 16.6, L3_44 17.4, L3 lobby/cafe 17.8-18.2). 13 Level-4 FCU sensors faulty (sentinel -40.7/90.7degC) - excluded+flagged.",
+  "points_used": "329 PAC-Zn-T zone-temp points, degC, exact metadata_code filter (LIKE saturated the 300 cap). 316 healthy / 13 faulty.",
+  "collectors_spanned": [402],
+  "multi_collector_handling": "All zone temps on a SINGLE collector (402), uniform PT15M - multi-collector branch NOT exercised (other site-186 collectors carry no zone temps). True multi-collector/mixed-cadence still untested.",
+  "charts_written": ["/tmp/ts-G6/zone_temp_distribution.png", "/tmp/ts-G6/zone_means_dotplot.png"],
+  "charting_notes": "matplotlib density histogram + numpy hand-rolled Gaussian KDE (no scipy/pandas); per-zone dotplot; plotted from gridded values only.",
+  "pct_outside_band": 35.8,
+  "hot_cold_zones": [{"zone":"FCU_L3_46","mean_degC":16.2},{"zone":"FCU_L3_45","mean_degC":16.6},{"zone":"FCU_L3_44","mean_degC":17.4},{"zone":"FCU_L5_SE_24","mean_degC":17.7},{"zone":"FCU_L3_LOBBY_01","mean_degC":17.8}],
+  "gridding_used": true, "used_duckdb": true, "wrote_parquet": true,
+  "mcp_call_count": 19, "schema_discovery_calls": 0, "failed_calls": 0,
+  "pulled_history_rows_into_context": false,
+  "followed_guideline": true,
+  "deviations": "NEW GAPS: (1) EMPTY-WINDOW / STALE SITE - requested June-2026 window had zero data (site data ends 2025-08-30); had to detect and fall back to last available complete week. Guideline assumes the window has data. (2) SENTINEL / OUT-OF-RANGE SCREENING - 13 sensors emit fault sentinels (-40.7, 90.7degC) that corrupt distributions; must drop physically-implausible values before stats. (3) CHARTING - guideline only knows the run-hours Gantt; no general histogram/density/scatter guidance (lib, KDE-without-scipy, plot-from-gridded-only). (4) Degenerate single-collector case. (5) LIKE saturates the 300-row favourites cap; exact metadata_code is better for a known class.",
+  "gave_up": false,
+  "wall_notes": "Strong real answer (cold-skewed building, L3 cold cluster, dead L4 sensors). 19 calls incl 9 in fetch sub-agent. matplotlib+numpy charting worked (no scipy needed). True multi-collector still not exercised - all zone temps on one collector."
+}

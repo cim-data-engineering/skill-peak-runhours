@@ -1,0 +1,16 @@
+{
+  "arm": "G-time guideline doing run-hours (for timing vs original skill)",
+  "question": "99 Elizabeth St weekday run hours, central plant + AHUs, last week, flag OOH",
+  "site_resolved": "99 Elizabeth St (site_id 3)",
+  "answer": "56 status points (13 plant + 43 AHU). AHUs ~9.9 weekday run-h (0-11.6). Plant light (winter): HWP-1 ~10.1h, CWP-1 ~4.1, CHWP-1 ~3.6, CH-01 ~2.3; CH-02/boilers/HWP-2-3/CHWP-2 off. OOH: L7/8 AHUs (AHU-C/E/N-7,-8) ran ~112h total on the unoccupied weekend (clearest issue); minor weekday out-of-band on 8 AHUs + pumps.",
+  "fav_ids_count": 56,
+  "approach": "Reference tier-1 status metadata_ids (Un-SAF/St 45, CH-St 9, CT-FSt 15, CHWP-St 32, CWPSt 37, PHWP-St 294, HWB-ST 19); dropped CH-01-HLI. Interval PT15M from favourites call (all collector 57). Grid 900s latest-wins, ON>=0.5, run_h = ON-buckets*900/3600, weekday avg /5, OOH outside Mon-Fri 07-19.",
+  "used_duckdb": true, "wrote_parquet": true, "produced_chart": false,
+  "mcp_call_count": 4, "schema_discovery_calls": 0, "failed_calls": 0,
+  "pulled_history_rows_into_context": false,
+  "wall_clock_seconds": 177,
+  "followed_guideline": true,
+  "deviations": "Run-hours friction following the GENERAL guideline: (1) run-hours formula is single-fav with NO built-in weekday-average or OOH concept - hand-derived weekday/working-hours masking. (2) status selection is a flat metadata_id table - manually split plant vs AHU + dropped -HLI; skill bundles curated set + dedup. (3) 56 favs x 7d ~40k rows > ~25-30k single-call ceiling -> split into 2 batches; the 43-fav example sits at the edge so the judgement was on me.",
+  "gave_up": false,
+  "wall_notes": "TIMING vs original skill (Exp1 C2): guideline 4 MCP calls vs skill 8; 0 schema-disc, 0 fail, ~177s wall (sub-agent fetch ~52s). Carrying fav_id+collector_id+interval+unit in ONE favourites call is why it beats the skill on calls. A dedicated skill saves REASONING (pre-baked plant codes, weekday/OOH partitioning, batch-sizing) and adds the Gantt, but not MCP calls. 39,864 raw rows never entered context."
+}

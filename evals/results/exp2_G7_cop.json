@@ -1,0 +1,19 @@
+{
+  "arm": "G7 guideline (calculated series: chiller COP/efficiency)",
+  "question": "At 99 Elizabeth St, estimate chiller COP/efficiency last week; show variation; how good?",
+  "site_resolved": "99 Elizabeth St (id 3)",
+  "answer": "TRUE COP NOT COMPUTABLE - no CHW volumetric flow point exists (all 'flow' favs are VAV air-flow l/s; only CHW hydraulic point is differential pressure kPa). Fell back to proxy: chiller kW per K of CHW delta-T (kW/K, lower=better), masked to chiller-running. Chiller ran ~6.8% of week (46/672 buckets, ~11.5h, daytime Mon-Wed); delta-T avg 2.0 K (median 1.7, 59% <2K = low delta-T); proxy avg 7.5 kW/K. Verdict: lightly loaded, low delta-T, but no real COP without flow.",
+  "points_used": "power CH-Pow-Cons-kW fav 122406568646 (kW, on CH-01-HLI); CHWCLT 122406569838 + CHWCET 122406569841 (degC). MISSING: no CHW flow point anywhere. CT/TSCWP VSDs zero history this window.",
+  "true_cop_possible": false,
+  "metric_reported": "chiller kW per K of CHW delta-T (kW/K) + delta-T (K)",
+  "calc_method": "Per 15-min bucket (collector 57): delta-T=max(return)-max(supply) (K); proxy=p_chiller/deltaT where deltaT>0.3K; operating mask chiller power>2kW BEFORE aggregating; shared degC unit; sign checked.",
+  "metric_summary": {"mean": 7.5, "range": "2.5-40.8 (median 5.7)", "unit": "kW/K (proxy)"},
+  "charts_written": ["/tmp/ts-G7/efficiency_timeseries.png", "/tmp/ts-G7/efficiency_distribution.png"],
+  "gridding_used": true, "used_duckdb": true, "wrote_parquet": true,
+  "mcp_call_count": 5, "schema_discovery_calls": 3, "failed_calls": 0,
+  "pulled_history_rows_into_context": false,
+  "followed_guideline": true,
+  "deviations": "Derived-metrics section handles 2-operand+mask but LACKS: (1) multi-operand (>2) arithmetic (true COP = flow x deltaT x 4.18 / power = 4 operands). (2) unit-conversion chain (L/s x K x 4.18 -> kW_th; kW_th/kW_el -> dimensionless). (3) graceful degradation when a REQUIRED operand point is ABSENT -> name+label the computable proxy (decision tree). (4) derived-series charting (matplotlib of kW/K series + histogram; Gantt doesn't fit). (5) MAGNITUDE sanity-check on operands (chiller power read ~3x below aux pumps -> scaled/partial HLI point). (6) flow searches dominated by VAV air-flow -> go via CHWS-Common equipment.",
+  "gave_up": false,
+  "wall_notes": "5 MCP calls, real verdict incl honest 'cannot compute true COP'. Caught a likely scaled HLI power point via magnitude reasoning. All raw history (449k chars) processed on disk, never in context."
+}
