@@ -28,26 +28,29 @@ Letting the agent attach read-only to the history store and write SQL directly w
   client-side over raw rows. Pushing `time_bucket`/`avg`/`corr` to the engine is a step
   change in both speed and context cost.
 
-### Why this can't be solved client-side (portability argument)
-Our guideline keeps raw history out of context by **delegating the fetch to a sub-agent** that
-returns only a manifest — a **Claude Code** orchestration construct. You **can't assume it
-exists** across MCP clients: claude.ai chat runs the work inline in one context (no sub-agent);
-cowork's status is unconfirmed (it may be Claude-Code-based and keep sub-agents, or have them
-disabled — being verified). Where there is no sub-agent, the client **cannot** isolate data
-volume itself; offload-to-file helps (you get a path, not rows) but relies on disciplined
-code-execution and breaks the moment a chunk returns inline. **So data-volume isolation
-shouldn't depend on a client-specific feature — own it on the platform.** Server-side
-aggregation (next subsection) works identically whether or not the client has sub-agents.
+### Two runtime buckets — the design must serve both (portability argument)
+Our guideline's mechanics (sub-agent delegation + DuckDB-over-Parquet) only work in one of the
+two environments MCP clients run in:
 
-### Runtime reality reshapes the tool design (verified against Anthropic docs)
-The execution environment external clients use is **constrained in ways that rule out the
-obvious "S3 link + client DuckDB" design**:
-- claude.ai / API **code-execution sandbox** preinstalls pandas, numpy, scipy, **pyarrow,
-  matplotlib, sqlite** — but **not DuckDB**, and there is **no dependency-manifest field** in
-  the Agent Skill format to add it.
-- The **API sandbox has no network** (no `pip install`, and **cannot fetch an external S3
-  URL**); claude.ai network access "varies by admin/user settings". (Claude Code runs locally,
-  so DuckDB/uv are fine there — but that's not where external customers run.)
+- **Local-VM, Claude-Code-like — Claude Code and Claude Cowork.** Isolated VM on the user's
+  machine: **sub-agents ARE available** (Cowork, launched Jan 2026 as "Claude Code for the rest
+  of your work", explicitly supports breaking work into subtasks and bundles "skills,
+  connectors, and sub-agents" in plugins), shell + filesystem, network via MCP connectors, and
+  packages installable (DuckDB via uv/pip). **Our guideline works here — and Cowork is the
+  likely external-client target.** *(Open, to confirm by direct test: whether Cowork preinstalls
+  DuckDB, and whether it loads Agent Skills as such vs only via plugins — both undocumented.)*
+- **Remote locked sandbox — Claude API code-execution tool and the claude.ai-chat analysis
+  tool.** Verified against Anthropic docs: **no network** (no `pip install`, **cannot fetch an
+  external S3 URL**), **no DuckDB** (and no dependency-manifest field in the Skill format to add
+  it), **no sub-agents** — but pandas/numpy/scipy/**pyarrow/matplotlib/sqlite** are preinstalled.
+  Here the work runs **inline** and must use **pandas/sqlite**; our sub-agent + DuckDB design
+  **does not work**.
+
+So a client-side approach can be made to work for Cowork/Claude Code but **breaks in the
+locked-sandbox clients** — and you can't tell which bucket a given user is in. A platform-side,
+server-aggregated history path is the only design that is correct in *both* buckets (and it's
+more context-efficient everywhere). That's the portability case: not "no client can do it", but
+"no single client-side design covers both runtimes".
 
 Consequences for the tool:
 1. **Don't hand back an S3 link the sandbox can't reach.** Deliver results through the **MCP
