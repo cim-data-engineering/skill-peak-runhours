@@ -11,12 +11,31 @@ server-side data path (DuckDB gridding `grid_sql.py`/`engine.py`, server charts
 direction from the client/agent side**; the genuinely *new* asks are in §4.
 
 ## TL;DR
-1. The history-extraction tax is real and the crux is **client portability** (two runtime
-   buckets, below). `peak-trends-mcp` already prototypes the fix.
-2. **Near-term feasible paths** (postgres push-down is **not** short-term): a server-side
-   **DuckDB-over-GQL analytics tool**, and/or **Parquet delivery + client-side DuckDB**
-   (ResourceLink→S3 or EmbeddedResource). §1.
-3. **Two net-new platform asks the POC doesn't cover: data-quality flags + metadata discovery.** §4.
+
+**The issue**
+- Time-series analytics over the MCP spends most effort *moving data*, not analysing it:
+  chunk → fetch → offload → unwrap → de-dup → Parquet → only then analyse. Fragile, high-variance.
+- The graceful "offload to a file" we rely on is a **Claude Code host behaviour, not a platform
+  guarantee** — other clients can silently lose large responses; CoWork drops them in `/tmp`.
+- **Client portability is the crux** — two runtime buckets: **local-VM** (Claude Code / CoWork:
+  DuckDB installable, sub-agents, network) vs **locked sandbox** (claude.ai-chat / API: no DuckDB,
+  no network, no sub-agents). No single *client-side* design serves both.
+- There is **no server-side gridding/aggregation today** — every average / run-hour / correlation
+  is computed client-side over raw rows.
+- `peak-trends-mcp` (the POC) already prototypes the server-side fix.
+
+**The options** (near-term feasible first; detail in §1)
+- **A — Server-side DuckDB-over-GQL analytics tool** *(recommended)*: the tool does
+  gridding/aggregation and returns compact results (or a small Parquet). Works in **both**
+  buckets, no client deps — and is the **migration seam** (swap GQL→postgres later, same tool).
+- **B — Parquet delivery + client-side DuckDB**: return `ResourceLink`→S3 (large) or
+  `EmbeddedResource(parquet)` (small/medium); client queries with DuckDB. **Local-VM clients only**
+  (needs client-side DuckDB).
+- **C — Postgres push-down**: **later — not short-term feasible**; reached via A's seam.
+
+**Net-new platform asks** (not covered by the POC; detail in §4)
+- **Data-quality flags** on `Favourite`/`History` — bad/scaled readings aren't surfaced.
+- **Metadata discovery** — keyword-searchable metadata / metadata-type tools.
 
 ## 1. The history path — problem, runtimes, and the recommended near-term design
 
