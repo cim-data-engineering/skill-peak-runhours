@@ -37,8 +37,10 @@ two environments MCP clients run in:
   of your work", explicitly supports breaking work into subtasks and bundles "skills,
   connectors, and sub-agents" in plugins), shell + filesystem, network via MCP connectors, and
   packages installable (DuckDB via uv/pip). **Our guideline works here — and Cowork is the
-  likely external-client target.** *(Open, to confirm by direct test: whether Cowork preinstalls
-  DuckDB, and whether it loads Agent Skills as such vs only via plugins — both undocumented.)*
+  likely external-client target.** *(Confirmed by direct test 2026-06-28: Cowork runs Agent
+  Skills installed via zip — the run-hours skill was built for exactly this — and although it
+  does not preinstall DuckDB, it installs cleanly. So a Cowork skill bundles its resources and
+  adds a `uv pip install duckdb pyarrow` setup step.)*
 - **Remote locked sandbox — Claude API code-execution tool and the claude.ai-chat analysis
   tool.** Verified against Anthropic docs: **no network** (no `pip install`, **cannot fetch an
   external S3 URL**), **no DuckDB** (and no dependency-manifest field in the Skill format to add

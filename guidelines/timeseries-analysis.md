@@ -195,9 +195,13 @@ FROM gridded GROUP BY 1 ORDER BY 1;
 Write derived results to a small CSV/JSON; chart from that if a visual is wanted (for the
 run-hours Gantt, hand the render-aggregate JSON to `scripts/render_runhours.py`).
 
-> **No pandas.** The analysis env has `duckdb` + `pyarrow` only — build lookup/map
-> relations as DuckDB tables (`CREATE TABLE ... ; INSERT INTO ... VALUES ...`), not
-> DataFrames.
+> **Runtime / engine.** This guideline uses `duckdb` + `pyarrow`. On **local-VM clients
+> (Claude Code, Cowork)** they may not be preinstalled — install first
+> (`uv pip install duckdb pyarrow`; confirmed working in Cowork). The **locked sandbox**
+> (claude.ai-chat / API code-exec) ships `pyarrow`/`pandas`/`sqlite` but has **no duckdb and
+> no way to install it** — there, do the gridding/aggregation in pandas or sqlite. When using
+> duckdb, build lookup/map relations as DuckDB tables (`CREATE TABLE … ; INSERT INTO … VALUES …`),
+> not DataFrames.
 
 ## Two-signal / correlation questions
 
