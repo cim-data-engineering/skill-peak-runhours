@@ -374,10 +374,11 @@ questions:
   exists in the requested window (cheap `history_available`, or a `latest` ts probe); if
   empty, fall back to the **last available complete window** and **state the actual window**
   — never return "no data" when the site has simply moved on.
-- **Screen sentinel / out-of-range values before any stats.** Faulty sensors emit sentinels
-  (e.g. `-40.7` / `90.7` °C) or impossible values; 4% sentinel rows made one distribution's
-  stats meaningless until gated. Drop values outside a physically-plausible range for the
-  unit **before** averaging / histogramming / correlating, and report the count excluded.
+- **Screen erroneous / out-of-range values before any stats.** Faulty sensors emit implausible
+  readings (e.g. `-40.7` / `90.7` °C — bad data, not clean sentinels like `9999`); 4% such rows
+  made one distribution's stats meaningless until gated. The platform doesn't quality-flag
+  these, so drop values outside a physically-plausible range for the unit **before**
+  averaging / histogramming / correlating, and report the count excluded.
 - **Working-hours / weekday masking.** Run-hours, OOH and comfort questions need the site
   `working_hours` block: derive weekday (`isodow`) and hour-of-day from `local_ts` and mask
   to occupied periods. "Weekday average" divides by weekdays in the window; OOH = ON/active
