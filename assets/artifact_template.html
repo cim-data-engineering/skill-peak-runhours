@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PEAK — Equipment Run Hours</title>
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:#ffffff;color:#1f2933;font:14px/1.5 Inter,"Segoe UI",Helvetica,Arial,sans-serif}
+.wrap{max-width:1060px;margin:0 auto;padding:16px 16px 40px}
+#status{padding:14px 18px;background:#eef4fb;border:1px solid #cfe0f3;border-radius:10px;color:#1c4e80;margin-bottom:12px}
+#status.err{background:#fdecec;border-color:#f5c2c2;color:#a12a2a}
+#chart svg{max-width:100%;height:auto}
+#footnotes{font-size:12px;color:#8a97a3;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="status">Loading status history from PEAK…</div>
+  <div id="chart"></div>
+  <div id="footnotes"></div>
+</div>
+<script>
+/* ================== CONFIG — EXAMPLE VALUES, the skill replaces EVERY field ==================
+   Fill from Step 1 (site, timezone, working hours, UTC window) and Step 2 (favourites call).
+   The window is the last 7 COMPLETE local days: local midnight expressed in UTC. */
+const CONFIG = {
+  siteName: "Example Tower",
+  timezone: "Australia/Brisbane",
+  windowLabel: "16-22 Jun 2026",
+  startTs: "2026-06-15T14:00:00Z",   // local midnight of day 1, in UTC
+  endTs:   "2026-06-22T14:00:00Z",   // local midnight after day 7, in UTC (end_exclusive)
+  whStartMin: 480,                    // weekday working-hours band, minutes from local midnight
+  whEndMin: 1080,
+  typeOrder: ["CH","CT","HWB","PCHWP","CWP","SCHW","PHWP","SHW","AHU"],
+  // One row per physical unit from platform.favourites (HLI duplicates removed).
+  // analog:true marks 3_analog_proxy fallback points (ON = value > 5% of observed max).
+  equipment: [
+    { favId: 0, name: "CH-1", type: "CH" },
+    { favId: 0, name: "AHU-1", type: "AHU", analog: false }
+  ],
+  chunkSize: 12                       // fav_ids per history call (halved automatically on failure)
+};
+/* TOOL — the fully-qualified MCP tool name for PEAK's execute_graphql_query, exactly as it
+   appears in the CURRENT session's tool list (looks like mcp__<connector-uuid>__execute_graphql_query).
+   The connector UUID differs per user/workspace — never reuse one from an example or a past session. */
+const TOOL = "__MCP_TOOL_EXECUTE_GRAPHQL_QUERY__";
+/* ============================================================================================= */
+
+/* ---- Locked render contract (port of scripts/render_runhours.py — encodings must not drift) */
+const C_IN_HOURS="#0e7490", C_OUT_OF_HOURS="#e08a1e", C_WH_BAND="#eaf0f4", C_GRIDLINE="#dfe5ea",
+      C_TEXT="#1f2933", C_MUTED="#8a97a3", C_GROUP_HEADER="#3b4754", C_BG="#ffffff";
+const FONT_STACK="Inter, Segoe UI, Helvetica, Arial, sans-serif";
+const FS_TITLE=18, FS_SUBTITLE=12, FS_GROUP=13, FS_ROW=12, FS_ANNOT=11, FS_TICK=10, FS_LEGEND=11;
+const WIDTH=1024, LEFT_GUTTER=150, RIGHT_COL=210, TOP_MARGIN=96, BOTTOM_MARGIN=24,
+      ROW_H=21, GROUP_HEADER_H=24, INTER_GROUP_GAP=12, BAR_H=11, CORNER_R=2,
+      LABEL_PAD=10, ANNOT_PAD=12, PAGE_PAD=16, LEGEND_MARGIN=22, LEGEND_SWATCH=14, LEGEND_H=18;
+const DAY_MIN=1440, TICK_EVERY_MIN=240, PLOT_X0=LEFT_GUTTER, PLOT_X1=WIDTH-RIGHT_COL, PLOT_W=PLOT_X1-PLOT_X0;
+
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const xOf=m=>PLOT_X0+(Math.max(0,Math.min(DAY_MIN,m))/DAY_MIN)*PLOT_W;
+const hhmm=m=>{m=Math.round(m);return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");};
+const g1=v=>{const n=+(+v).toFixed(1);return String(n);};
+const baseline=(cy,fs)=>cy+fs*0.35;
+
+function splitSeg(s,e,whs,whe){
+  s=Math.max(0,Math.min(DAY_MIN,s)); e=Math.max(0,Math.min(DAY_MIN,e));
+  const pieces=[]; if(e<=s) return pieces;
+  if(s<whs) pieces.push([s,Math.min(e,whs),C_OUT_OF_HOURS]);
+  const a=Math.max(s,whs), b=Math.min(e,whe);
+  if(b>a) pieces.push([a,b,C_IN_HOURS]);
+  if(e>whe) pieces.push([Math.max(s,whe),e,C_OUT_OF_HOURS]);
+  return pieces;
+}
+function annotation(e){
+  let t=`${e.lbl} · ${g1(e.wd_run)}h`;
+  if(e.wd_ooh>=0.1) t+=`  OOH ${g1(e.wd_ooh)}h`;
+  if(e.we_run>=0.1) t+=`  +wknd ${g1(e.we_run)}h`;
+  return t;
+}
+function renderSvg(agg){
+  const whs=agg.wh_start_min, whe=agg.wh_end_min;
+  const byType={};
+  for(const e of agg.equipment)(byType[e.type]=byType[e.type]||[]).push(e);
+  const order=[...agg.type_order, ...Object.keys(byType).filter(t=>!agg.type_order.includes(t))];
+  const groups=order.filter(t=>byType[t]&&byType[t].length).map(t=>[t,byType[t]]);
+  let y=TOP_MARGIN; const layout=[];
+  for(const [t,eqs] of groups){
+    const headerY=y; y+=GROUP_HEADER_H; const bandTop=y;
+    const rows=eqs.map(e=>{const r=[e,y]; y+=ROW_H; return r;});
+    layout.push([t,headerY,rows,bandTop,y]); y+=INTER_GROUP_GAP;
+  }
+  const plotBottom=layout.length?y-INTER_GROUP_GAP:TOP_MARGIN;
+  const legendY=plotBottom+LEGEND_MARGIN, totalH=legendY+LEGEND_H+BOTTOM_MARGIN;
+  const p=[];
+  p.push(`<rect x="0" y="0" width="${WIDTH}" height="${totalH.toFixed(0)}" fill="${C_BG}"/>`);
+  const bx=xOf(whs), bw=xOf(whe)-xOf(whs);
+  if(bw>0) for(const [, , ,bandTop,bandBottom] of layout)
+    p.push(`<rect x="${bx.toFixed(1)}" y="${bandTop}" width="${bw.toFixed(1)}" height="${bandBottom-bandTop}" fill="${C_WH_BAND}"/>`);
+  for(let tick=0;tick<=DAY_MIN;tick+=TICK_EVERY_MIN){
+    const gx=xOf(tick);
+    p.push(`<line x1="${gx.toFixed(1)}" y1="${TOP_MARGIN}" x2="${gx.toFixed(1)}" y2="${plotBottom}" stroke="${C_GRIDLINE}" stroke-width="1"/>`);
+    p.push(`<text x="${gx.toFixed(1)}" y="${TOP_MARGIN-8}" font-size="${FS_TICK}" fill="${C_MUTED}" text-anchor="middle">${hhmm(tick)}</text>`);
+  }
+  const title=`${agg.site_name} - average weekday equipment run hours`;
+  const subtitle=`${agg.window_label}. Working hours ${hhmm(whs)}-${hhmm(whe)} (shaded). Orange = running out of hours.`;
+  p.push(`<text x="${PAGE_PAD}" y="32" font-size="${FS_TITLE}" font-weight="600" fill="${C_TEXT}">${esc(title)}</text>`);
+  p.push(`<text x="${PAGE_PAD}" y="52" font-size="${FS_SUBTITLE}" fill="${C_MUTED}">${esc(subtitle)}</text>`);
+  for(const [t,headerY,rows] of layout){
+    p.push(`<text x="${PAGE_PAD}" y="${headerY+GROUP_HEADER_H-7}" font-size="${FS_GROUP}" font-weight="600" fill="${C_GROUP_HEADER}">${esc(t)}</text>`);
+    for(const [e,rowY] of rows){
+      const cy=rowY+ROW_H/2, tb=baseline(cy,FS_ROW);
+      p.push(`<text x="${LEFT_GUTTER-LABEL_PAD}" y="${tb.toFixed(1)}" font-size="${FS_ROW}" fill="${C_TEXT}" text-anchor="end">${esc(e.name)}</text>`);
+      if(e.ran){
+        const barY=rowY+(ROW_H-BAR_H)/2;
+        for(const [s,end] of e.segs) for(const [x0m,x1m,colour] of splitSeg(s,end,whs,whe)){
+          const rx=xOf(x0m), rw=xOf(x1m)-xOf(x0m);
+          if(rw<=0) continue;
+          p.push(`<rect x="${rx.toFixed(1)}" y="${barY.toFixed(1)}" width="${rw.toFixed(1)}" height="${BAR_H}" rx="${CORNER_R}" ry="${CORNER_R}" fill="${colour}"/>`);
+        }
+        p.push(`<text x="${PLOT_X1+ANNOT_PAD}" y="${tb.toFixed(1)}" font-size="${FS_ANNOT}" fill="${C_TEXT}">${esc(annotation(e))}</text>`);
+      }else{
+        p.push(`<text x="${PLOT_X0+LABEL_PAD}" y="${tb.toFixed(1)}" font-size="${FS_ROW}" font-style="italic" fill="${C_MUTED}">${esc(e.lbl||"no runtime this week")}</text>`);
+      }
+    }
+  }
+  const items=[[C_IN_HOURS,"Running in working hours"],[C_OUT_OF_HOURS,"Running out of hours"],[C_WH_BAND,"Working hours"]];
+  let lx=PAGE_PAD;
+  for(const [colour,label] of items){
+    p.push(`<rect x="${lx}" y="${legendY}" width="${LEGEND_SWATCH}" height="${LEGEND_SWATCH}" rx="${CORNER_R}" ry="${CORNER_R}" fill="${colour}" stroke="${C_GRIDLINE}" stroke-width="1"/>`);
+    const ty=baseline(legendY+LEGEND_SWATCH/2,FS_LEGEND);
+    p.push(`<text x="${(lx+LEGEND_SWATCH+6).toFixed(1)}" y="${ty.toFixed(1)}" font-size="${FS_LEGEND}" fill="${C_TEXT}">${esc(label)}</text>`);
+    lx+=LEGEND_SWATCH+6+label.length*FS_LEGEND*0.55+28;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${totalH.toFixed(0)}" viewBox="0 0 ${WIDTH} ${totalH.toFixed(0)}" font-family="${FONT_STACK}">\n${p.join("\n")}\n</svg>`;
+}
+
+/* ---- MCP fetch layer (do not rewrite) -------------------------------------------------- */
+function unwrap(r){ if(!r) return null; if(r.isError) throw new Error("MCP error"); if(r.structuredContent) return r.structuredContent; try{return JSON.parse(r.content[0].text);}catch(e){return r;} }
+function setStatus(msg,err){const el=document.getElementById("status");el.textContent=msg;el.className=err?"err":"";}
+async function fetchChunk(favIds){
+  const args={query_name:"platform.history",
+    args:{fav_ids:favIds,start:CONFIG.startTs,end:CONFIG.endTs,end_exclusive:true},
+    fields:["fav_id","ts","data"]};
+  const res=unwrap(await window.cowork.callMcpTool(TOOL,args));
+  const rows=(res&&res.results)||(Array.isArray(res)?res:[]);
+  return rows;
+}
+async function fetchAll(){
+  const ids=CONFIG.equipment.map(e=>e.favId);
+  const queue=[]; for(let i=0;i<ids.length;i+=CONFIG.chunkSize) queue.push(ids.slice(i,i+CONFIG.chunkSize));
+  const rows=[]; let done=0, total=queue.length;
+  while(queue.length){
+    const batch=queue.shift();
+    try{
+      rows.push(...await fetchChunk(batch));
+      done++; setStatus(`Loading status history… (${done}/${total} chunks)`);
+    }catch(e){
+      // gateway 5xx on an oversized pull — halve the batch and retry both halves
+      if(batch.length>1){const mid=Math.ceil(batch.length/2);queue.unshift(batch.slice(mid));queue.unshift(batch.slice(0,mid));total++;}
+      else throw e;
+    }
+  }
+  return rows;
+}
+
+/* ---- Stats: per-day run hours, OOH, typical-ON envelope (mirrors the script pipeline) --- */
+const fmt=new Intl.DateTimeFormat("en-US",{timeZone:CONFIG.timezone,hourCycle:"h23",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",weekday:"short"});
+const DOW={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+function localParts(iso){
+  const o={}; for(const x of fmt.formatToParts(new Date(iso))) o[x.type]=x.value;
+  return {key:`${o.year}-${o.month}-${o.day}`, min:(+o.hour)*60+(+o.minute), dow:DOW[o.weekday]};
+}
+function computeStats(rows){
+  const byFav=new Map();
+  for(const r of rows){
+    if(r.data==null) continue;
+    let a=byFav.get(r.fav_id); if(!a) byFav.set(r.fav_id,a=[]);
+    a.push(r);
+  }
+  // derive cadence (minutes) from ts deltas; default 15
+  let cadence=15;
+  for(const a of byFav.values()){
+    if(a.length<3) continue;
+    const ts=a.map(r=>Date.parse(r.ts)).sort((x,y)=>x-y);
+    const deltas={};
+    for(let i=1;i<Math.min(ts.length,200);i++){const d=(ts[i]-ts[i-1])/60000;if(d>0)deltas[d]=(deltas[d]||0)+1;}
+    const best=Object.entries(deltas).sort((x,y)=>y[1]-x[1])[0];
+    if(best){cadence=+best[0];break;}
+  }
+  const slots=Math.round(DAY_MIN/cadence);
+  const noData=[];
+  const equipment=CONFIG.equipment.map(eq=>{
+    const raw=byFav.get(eq.favId)||[];
+    if(!raw.length){noData.push(eq.name);return {name:eq.name,type:eq.type,wd_run:0,we_run:0,wd_ooh:0,segs:[],lbl:"no data returned",ran:false};}
+    // ON rule: {0,1}→1=ON; {1,2}→2=ON; analog / many-valued → > 5% of observed max
+    const vals=[...new Set(raw.map(r=>+(+r.data).toFixed(3)))];
+    const mx=Math.max(...vals);
+    let isOn;
+    if(eq.analog||vals.length>8) isOn=v=>v>0.05*mx;
+    else if(vals.every(v=>v===0||v===1)) isOn=v=>v===1;
+    else if(vals.every(v=>v===1||v===2)) isOn=v=>v===2;
+    else isOn=v=>v===mx;
+    // per local day slot grid
+    const days=new Map();
+    for(const r of raw){
+      const lp=localParts(r.ts);
+      let d=days.get(lp.key); if(!d) days.set(lp.key,d={dow:lp.dow,on:new Uint8Array(slots),n:0});
+      const si=Math.min(slots-1,Math.floor(lp.min/cadence));
+      if(isOn(+r.data)) d.on[si]=1;
+      d.n++;
+    }
+    let wdRunH=0,weRunH=0,wdOohH=0,ranDays=[];
+    const wdKeys=[...days.keys()].filter(k=>{const d=days.get(k).dow;return d>=1&&d<=5;});
+    const envCount=new Uint16Array(slots);
+    for(const [key,d] of days){
+      const isWd=d.dow>=1&&d.dow<=5;
+      let run=0,ooh=0,first=null,last=null;
+      for(let i=0;i<slots;i++) if(d.on[i]){
+        run+=cadence;
+        const m0=i*cadence,m1=m0+cadence;
+        if(m1<=CONFIG.whStartMin||m0>=CONFIG.whEndMin) ooh+=cadence;
+        else{ooh+=Math.max(0,CONFIG.whStartMin-m0)+Math.max(0,m1-CONFIG.whEndMin);}
+        if(first==null)first=m0; last=m1;
+        if(isWd) envCount[i]++;
+      }
+      if(isWd){wdRunH+=run/60;wdOohH+=ooh/60;} else weRunH+=run/60;
+      if(run>0) ranDays.push({first,last});
+    }
+    const wdDays=Math.max(wdKeys.length,1);   // normally 5
+    const envThresh=Math.max(1,Math.ceil(wdDays*0.5));
+    const segs=[]; let s=null;
+    for(let i=0;i<slots;i++){
+      const on=envCount[i]>=envThresh;
+      if(on&&s==null)s=i*cadence;
+      if(!on&&s!=null){segs.push([s,i*cadence]);s=null;}
+    }
+    if(s!=null)segs.push([s,DAY_MIN]);
+    const ran=ranDays.length>0;
+    let lbl="no runtime this week";
+    if(ran){
+      const avgF=ranDays.reduce((t,d)=>t+d.first,0)/ranDays.length;
+      const avgL=ranDays.reduce((t,d)=>t+d.last,0)/ranDays.length;
+      lbl=`${hhmm(avgF)}-${hhmm(avgL)}`;
+    }
+    return {name:eq.name,type:eq.type,
+      wd_run:+(wdRunH/5).toFixed(1), we_run:+(weRunH/2).toFixed(1), wd_ooh:+(wdOohH/5).toFixed(1),
+      segs, lbl, ran};
+  });
+  return {agg:{site_name:CONFIG.siteName,window_label:CONFIG.windowLabel,
+    wh_start_min:CONFIG.whStartMin,wh_end_min:CONFIG.whEndMin,
+    type_order:CONFIG.typeOrder,equipment}, noData, cadence};
+}
+
+async function main(){
+  try{
+    if(!window.cowork||!window.cowork.callMcpTool)
+      throw new Error("window.cowork is unavailable — this page only fetches data inside the Cowork artifact viewer.");
+    const rows=await fetchAll();
+    setStatus("Computing run-hours…");
+    const {agg,noData,cadence}=computeStats(rows);
+    document.getElementById("chart").innerHTML=renderSvg(agg);
+    const notes=[];
+    if(noData.length) notes.push(`No status data returned for: ${noData.join(", ")}.`);
+    notes.push(`Grid cadence ${cadence} min · window ${CONFIG.windowLabel} (${CONFIG.timezone}).`);
+    document.getElementById("footnotes").textContent=notes.join(" ");
+    document.getElementById("status").style.display="none";
+  }catch(e){
+    setStatus("Failed to load run-hours data: "+e.message,true);
+  }
+}
+main();
+</script>
+</body>
+</html>
