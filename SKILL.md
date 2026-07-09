@@ -9,7 +9,7 @@ description: Average weekly run-hours visualisation for central plant and AHU eq
 
 Show a building operator **when equipment actually runs versus when the building is occupied** at one PEAK site, averaged over the past full week. One deliverable: a Gantt-style visual — rows are equipment, bars span average daily start→stop, working hours overlaid so out-of-hours running is visible at a glance.
 
-Pipeline, optimised for speed and minimal context: resolve site → one favourites call → bulk history pull saved to disk → one script computes the stats and renders the visual.
+Pipeline, optimised for speed and minimal context: resolve site → one favourites call → then one of two render paths. **In Cowork, prefer the live artifact (Step 3A)** — the history pull happens inside the artifact page via `window.cowork.callMcpTool`, so the raw samples never touch chat context and there are no offloaded files to handle. Elsewhere, or when the user needs raw/derived data on disk for drilldowns, use the script pipeline (Step 3B): bulk history pull saved to disk → one script computes the stats and renders the visual.
 
 ## Resources — read first
 
@@ -18,7 +18,7 @@ This skill bundles two reference resources; read them before analysing:
 - **[`references/timeseries-analysis.md`](references/timeseries-analysis.md)** — the general PEAK time-series method playbook (select points → **sub-agent** fetch → Parquet → DuckDB grid+aggregate; correlation, derived metrics, data-quality, energy, charting) **plus a *Running in CoWork* section** (install DuckDB, locate spilled MCP results in the VM mount, sub-agent delegation). Run-hours below is **one specialisation** of that pipeline — for any *other* time-series question, follow the guideline directly.
 - **[`references/peak_gql_glossary.md`](references/peak_gql_glossary.md)** — PEAK GraphQL field/arg conventions (display-name varies by type, args-vs-fields, traversal) that prevent the common `execute_graphql_query` errors.
 
-On top of the guideline, the run-hours steps below add: the curated tier-1 status `metadata_id` reference (`references/ooh_status_metadata_reference.md`), the locked Gantt render contract, and `scripts/render_runhours.py`.
+On top of the guideline, the run-hours steps below add: the curated tier-1 status `metadata_id` reference (`references/ooh_status_metadata_reference.md`), the locked Gantt render contract, `scripts/render_runhours.py`, and the Cowork live-artifact template (`assets/artifact_template.html`).
 
 ## Scope rules
 
@@ -41,7 +41,20 @@ Look up tier-1 status `metadata_id`s for the scoped type codes in `references/oo
 - Dedupe physical units: same plant item with two favourites (e.g. `CH-1` / `CH-1-HLI`) → keep the non-HLI one.
 - No equipment listing, no cache file, no scope gate — whatever this call returns is the point list. Large lists are handled by chunking the pull, not by asking.
 
-## Step 3 — Pull to disk, script, visualise
+## Step 3A — Cowork live artifact (preferred in Cowork)
+
+The deliverable is a **live HTML artifact**: `assets/artifact_template.html` is a complete, working page that fetches the 7-day status history itself and renders the locked Gantt contract client-side. Two things — and only two — get edited in the template:
+
+1. **`TOOL`** — the Cowork artifact runtime injects `window.cowork.callMcpTool(toolName, args)`, and `toolName` must be the *fully-qualified* name of the PEAK `execute_graphql_query` tool exactly as it appears in the **current session's** tool list, e.g. `mcp__<connector-uuid>__execute_graphql_query`. The connector UUID is per user/workspace — a UUID copied from an example or a previous session will fail. Replace the `__MCP_TOOL_EXECUTE_GRAPHQL_QUERY__` placeholder.
+2. **`CONFIG`** — the shipped values are a worked example documenting each field's shape; replace every field: site name, timezone, window label and the UTC `startTs`/`endTs` from Step 1, the working-hours band in minutes-from-midnight, `typeOrder`, and the `equipment` list straight from the Step 2 favourites call (`favId`/`name`/`type`; mark `3_analog_proxy` fallback points `analog: true` so the >5%-of-max ON rule applies). `chunkSize` (default 12 fav_ids per call) respects the same ~2 MB gateway limit documented in Step 3B — the page halves a failing batch and retries automatically.
+
+Do **not** rewrite the rest of the template. The fetch layer (MCP response unwrapping, chunking, retry), the stats layer (ON/OFF value-set rules, per-day run/OOH hours, the typical-ON `segs` envelope), and the SVG renderer (a faithful port of `scripts/render_runhours.py`) already implement the contract below — only `TOOL` and `CONFIG` vary per run.
+
+Write the filled copy to the outputs folder, `create_artifact`, then `verify_artifact` to confirm the history loaded and the Gantt rendered. Close with the scope assumption and any anomaly flags; the per-row annotations (OOH, weekend hours, "no runtime") carry the detail. `window.cowork` exists only inside the Cowork artifact viewer — a raw `.html` opened in a normal browser cannot fetch (expected).
+
+Follow-up drilldowns that need the raw samples (e.g. day-by-day for one unit) still go through the script pipeline below — the artifact's data lives only in the browser.
+
+## Step 3B — Script pipeline: pull to disk, script, visualise (fallback)
 
 **Bulk pull.** `execute_graphql_query(platform.history, args: {fav_ids: [...], start, end, end_exclusive: true}, fields: ["fav_id","ts","data"])`. Fetch all three fields — payload size is irrelevant once offloaded, and real `ts` + `fav_id` let the script derive the grid itself (no index math, no DST bugs, no grid probe). Chunk only to keep each call under ~2 MB / ~25 k rows — measured against the live gateway: **all status points × 7 days fits one call** (43 points × 7 days ≈ 29 k rows ≈ 2 MB succeeded). The binding limit is payload **size, not the 30 s timeout** (large pulls returned in ~15 s), and oversized responses **offload to a file gracefully** rather than erroring (the ~45–95 KB inline→file boundary is a client token cap, not a failure). Beyond ~2 MB the gateway hard-fails with a Cloudflare **502** (`origin_bad_gateway`, retryable, `retry_after 60`) — on a 502/5xx, halve the fav_id batch or window and retry.
 
@@ -103,6 +116,17 @@ Close with one-line anomaly flags only (zero runtime, weekend OOH, pre-dawn star
 - If a large result unexpectedly arrives inline rather than as a file path, don't keep pulling into context — reduce the chunk size, and warn the user if it persists.
 
 ## Tool sequence
+
+Cowork live artifact (Step 3A):
+
+```
+search_sites             (include_working_hours: true)
+execute_graphql_query    (platform.favourites — one call)
+<fill assets/artifact_template.html>   (TOOL + CONFIG only; the page pulls history itself)
+create_artifact → verify_artifact      (the visual, once)
+```
+
+Script pipeline (Step 3B):
 
 ```
 search_sites             (include_working_hours: true)

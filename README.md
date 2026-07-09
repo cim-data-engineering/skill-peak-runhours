@@ -27,3 +27,5 @@ For example:
 * `/peak-runhours average run hours at 123 Main St, central plant only`
 
 Large sites are pulled in chunks automatically. After the visual renders, ask follow-ups like "drill into CH-2 day by day" or "re-run for AHUs only" — no re-invocation needed.
+
+In **Cowork**, the skill instead delivers a live HTML artifact (`assets/artifact_template.html`) that fetches the status history itself via `window.cowork.callMcpTool` and renders the same Gantt in the browser — the raw samples never enter the chat context. Outside Cowork it falls back to the original pull-to-disk + SVG pipeline.
